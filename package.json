@@ -1,0 +1,29 @@
+{
+	"name": "photoorganizer",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"build": "bun build ./index.ts --compile --outfile organizer"
+	},
+	"devDependencies": {
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@huggingface/transformers": "^3.7.5",
+		"@tensorflow/tfjs-node": "^4.22.0",
+		"@types/cli-progress": "^3.11.6",
+		"@types/yargs": "^17.0.33",
+		"@vladmandic/face-api": "^1.7.15",
+		"cli-progress": "^3.12.0",
+		"exifr": "^7.1.3",
+		"fast-glob": "^3.3.3",
+		"ollama": "^0.6.0",
+		"sharp": "^0.34.4",
+		"sharp-phash": "^2.2.0",
+		"yargs": "^18.0.0"
+	}
+}
