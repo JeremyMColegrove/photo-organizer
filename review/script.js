@@ -38,18 +38,32 @@ function initMasonry() {
 
 // Returns the `i` of the highest-scored item in a group
 function bestIndexForGroup(group) {
-	let best = null;
-	let bestScore = -Infinity;
-	const arr = group && Array.isArray(group.items) ? group.items : [];
-	for (let k = 0; k < arr.length; k++) {
-		const it = arr[k];
-		const s = it && typeof it.score === "number" ? it.score : -Infinity;
-		if (s > bestScore) {
-			bestScore = s;
-			best = it.i;
-		}
-	}
-	return best;
+    let best = null;
+    let bestScore = -Infinity;
+    // Accept either { items: [...] } or raw array of entries
+    let arr;
+    if (group && Array.isArray(group.items)) {
+        arr = group.items;
+    } else if (Array.isArray(group)) {
+        arr = group.map((entry, i) => ({
+            i,
+            score:
+                typeof entry?.score?.score === "number"
+                    ? entry.score.score
+                    : Number(entry?.score) || 0,
+        }));
+    } else {
+        arr = [];
+    }
+    for (let k = 0; k < arr.length; k++) {
+        const it = arr[k];
+        const s = it && typeof it.score === "number" ? it.score : -Infinity;
+        if (s > bestScore) {
+            bestScore = s;
+            best = it.i;
+        }
+    }
+    return best;
 }
 
 function buildCard(it, recIndex) {
@@ -217,10 +231,21 @@ function updateHeaderControls() {
 }
 
 function loadGroup(gi) {
-	currentGroup = gi;
-	const g = groups[gi];
-	// Build items payload with group index carried through
-	items = g.items.map((it) => ({ ...it, gi }));
+    currentGroup = gi;
+    const g = groups[gi];
+    // Build items payload with group index carried through; tolerate raw arrays
+    const baseItems = Array.isArray(g)
+        ? g.map((entry, i) => ({
+              i,
+              score:
+                  typeof entry?.score?.score === "number"
+                      ? entry.score.score
+                      : Number(entry?.score) || 0,
+          }))
+        : Array.isArray(g?.items)
+        ? g.items
+        : [];
+    items = baseItems.map((it) => ({ ...it, gi }));
 	// Set selected from per-group selection set
 	const sel = groupSelections[gi] || new Set();
 	selected = new Set(sel);
