@@ -119,7 +119,7 @@ async function main() {
 		const clipped = await buildPhotosFromFiles(filesAbs);
 
 		const pregroup = await preGroupPhotos(clipped, keywords, {
-			threshold: 0.001,
+			threshold: 0.0001,
 		});
 
 		saveLog(pregroup, "pregroup.json");
