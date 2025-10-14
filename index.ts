@@ -7,7 +7,7 @@ import { compressImagesInFolder } from "./compress/compress";
 import { groupPhotos } from "./group";
 import { moveDups } from "./moves/move";
 import { tagAndRenameFiles } from "./rename/rename";
-import { reviewGroupBun } from "./review/review";
+import { reviewAllGroupsBun } from "./review/review";
 import { scoreImages } from "./score/score";
 
 const MODELS_DIR = path.resolve("models");
@@ -49,7 +49,7 @@ async function main() {
 		.option("rename-delay", {
 			type: "number",
 			default: 100,
-			describe: "Delay between captions in ms (used when concurrency=1)",
+			describe: "Delay between captions in ms",
 		})
 		.option("rename-tags", {
 			type: "number",
@@ -59,11 +59,6 @@ async function main() {
 		.option("rename-limit", {
 			type: "number",
 			describe: "Limit number of images to rename",
-		})
-		.option("rename-concurrency", {
-			type: "number",
-			default: 3,
-			describe: "How many images to caption in parallel",
 		})
 		.strict()
 		.help()
@@ -106,22 +101,25 @@ async function main() {
 		});
 		saveLog(groups, "groups.json");
 		scored = await scoreImages(groups, MODELS_DIR);
-		for (var group of scored) {
-			const res = await reviewGroupBun(group, {
-				htmlPath: "./review/index.html",
-				scriptPath: "./review/script.js",
-			});
 
+		// Multi-group review in a single session
+		const allKeeps = await reviewAllGroupsBun(scored, {
+			htmlPath: "./review/index.html",
+			scriptPath: "./review/script.js",
+		});
+		for (let gi = 0; gi < scored.length; gi++) {
+			const group = scored[gi]!;
+			const keepIdx = new Set(allKeeps[gi] || []);
 			chosen.push(
 				group.map((ele, i) => ({
 					...ele,
-					keep: res.includes(i),
+					keep: keepIdx.has(i),
 				})),
 			);
 		}
 		saveLog(scored, "groups.scored.json");
 	} else {
-		console.log("Skipping: group");
+		console.log("⚠️ Skipping: group");
 	}
 
 	// 3) Move duplicates to a folder
@@ -134,7 +132,7 @@ async function main() {
 		const dest = path.resolve("./duplicates");
 		await moveDups(chosen, dest);
 	} else {
-		console.log("Skipping: move");
+		console.log("⚠️ Skipping: move");
 	}
 
 	// 4) Tag and rename images in place using provided file list
@@ -153,17 +151,17 @@ async function main() {
 				typeof argv["rename-limit"] === "number"
 					? Number(argv["rename-limit"])
 					: undefined,
-			concurrency: 3, //Number(argv["rename-concurrency"]) || 3,
+			concurrency: 1,
 		});
 	} else {
-		console.log("Skipping: rename");
+		console.log("⚠️ Skipping: rename");
 	}
 
 	// 5) Compress images
 	if (shouldRun("compress")) {
 		await compressImagesInFolder(folder, 500);
 	} else {
-		console.log("Skipping: compress");
+		console.log("⚠️ Skipping: compress");
 	}
 }
 

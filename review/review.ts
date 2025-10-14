@@ -94,12 +94,12 @@ export async function reviewGroupBun(
 					const body = (await req.json()) as { keep: number[] };
 					if (!body || !Array.isArray(body.keep)) throw new Error("invalid");
 					queueMicrotask(async () => {
-						try {
-							server.stop(true);
-						} catch {}
-						await new Promise((r) => setTimeout(r, 200));
-						setTimeout(() => server.stop(true), 10);
+						// Resolve immediately so the pipeline can continue
 						resolveKeep((body.keep as number[]).sort((a, b) => a - b));
+						// Give the client time to render the success popup, then stop server
+						setTimeout(() => {
+							try { server.stop(true); } catch {}
+						}, 1000);
 					});
 					return Response.json({ ok: true });
 				} catch (e) {
@@ -122,6 +122,137 @@ export async function reviewGroupBun(
 
 function isAbs(p: string) {
 	return p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p);
+}
+
+/**
+ * Multi-group review: serves all groups at once and resolves after a single save.
+ */
+export async function reviewAllGroupsBun(
+  groups: ScoreGroup[],
+  opts: Options,
+): Promise<number[][]> {
+  const port = opts.port ?? 8757;
+  const htmlFile = Bun.file(opts.htmlPath);
+  const jsFile = Bun.file(opts.scriptPath);
+
+  // Resolve absolute file paths per group
+  const filesPerGroup = groups.map((group) =>
+    group.map((g) => (isAbs(g.path) || !opts.root ? g.path : join(opts.root!, g.path))),
+  );
+
+  // Scores and per-group recommended indices
+  const scoresPerGroup = groups.map((g) => g.map((x) => x.score));
+  const recommendedPerGroup = scoresPerGroup.map((scores) => {
+    let bestIdx = 0;
+    let best = -Infinity;
+    for (let i = 0; i < scores.length; i++) {
+      const s = Number(scores[i]?.score ?? 0);
+      if (s > best) {
+        best = s;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  });
+
+  // Promise that resolves when user saves all
+  let resolveKeep!: (v: number[][]) => void;
+  const decided = new Promise<number[][]>((r) => {
+    resolveKeep = r;
+  });
+
+  const server = Bun.serve({
+    port,
+    reusePort: false,
+    async fetch(req) {
+      const url = new URL(req.url);
+      const { pathname } = url;
+
+      // HTML
+      if (pathname === "/" || pathname === "/review") {
+        return new Response(htmlFile, {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      // Serve JS
+      if (pathname === "/script.js") {
+        return new Response(jsFile, {
+          headers: { "Content-Type": "application/javascript; charset=utf-8" },
+        });
+      }
+
+      // Data for the page (multi-group)
+      if (pathname === "/api/data") {
+        const groupsPayload = filesPerGroup.map((files, gi) => ({
+          index: gi,
+          items: files.map((_, ii) => ({
+            i: ii,
+            score: scoresPerGroup[gi]![ii],
+            recommended: ii === recommendedPerGroup[gi],
+          })),
+        }));
+        return Response.json({ groups: groupsPayload });
+      }
+
+      // Serve original image bytes by group and index
+      if (pathname.startsWith("/img/")) {
+        // Format: /img/{gi}/{ii}
+        const parts = pathname.split("/").filter(Boolean); // ["img", gi, ii]
+        if (parts.length === 3) {
+          const gi = Number(parts[1]);
+          const ii = Number(parts[2]);
+          if (
+            Number.isInteger(gi) &&
+            Number.isInteger(ii) &&
+            gi >= 0 &&
+            gi < filesPerGroup.length &&
+            ii >= 0 &&
+            ii < filesPerGroup[gi]!.length
+          ) {
+            try {
+              const filePath = filesPerGroup[gi]![ii]!;
+              const f = Bun.file(filePath);
+              return new Response(f, { headers: { "Content-Type": mime(filePath) } });
+            } catch {}
+          }
+        }
+        return new Response("Not found", { status: 404 });
+      }
+
+      // Accept selection for all groups at once
+      if (pathname === "/api/decide" && req.method === "POST") {
+        try {
+          const body = (await req.json()) as { results: number[][] };
+          if (!body || !Array.isArray(body.results)) throw new Error("invalid");
+          const cleaned = body.results.map((arr) =>
+            Array.isArray(arr)
+              ? (arr.filter((n) => Number.isInteger(n) && n >= 0) as number[]).sort(
+                  (a, b) => a - b,
+                )
+              : [],
+          );
+
+          queueMicrotask(async () => {
+            // Resolve immediately so the pipeline can continue
+            resolveKeep(cleaned);
+            // Allow client time to show success popup, then stop server
+            setTimeout(() => {
+              try { server.stop(true); } catch {}
+            }, 1000);
+          });
+          return Response.json({ ok: true });
+        } catch (e) {
+          return Response.json({ ok: false, error: String(e) }, { status: 400 });
+        }
+      }
+
+      return new Response("Not found", { status: 404 });
+    },
+  });
+
+  openInBrowser(`http://127.0.0.1:${port}/review`);
+  return await decided;
 }
 function join(a: string, b: string) {
 	if (a.endsWith("/") || a.endsWith("\\")) return a + b.replace(/^[/\\]/, "");

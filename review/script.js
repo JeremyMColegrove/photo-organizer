@@ -1,10 +1,16 @@
 let items = [];
 let selected = new Set();
+// Multi-group state
+let groups = null; // [{ index, items: [...] }]
+let multiMode = false;
+let currentGroup = 0;
+let groupSelections = []; // Array<Set<number>> by group index
 
 const $grid = $("#grid");
 const $empty = $("#empty");
 const $modal = $("#modal");
 const $modalImg = $("#modal-img");
+const $done = $("#done");
 
 let macy; // masonry instance
 
@@ -33,6 +39,8 @@ function initMasonry() {
 function buildCard(it) {
 	const isChecked = selected.has(it.i);
 
+	const imgSrc = multiMode ? `/img/${it.gi}/${it.i}` : `/img/${it.i}`;
+
 	const $card = $(`
     <figure class="avoid-break masonry-item">
       <div class="relative overflow-hidden rounded-xl border ${isChecked ? "border-emerald-500 border-2" : "border-zinc-800"} bg-zinc-900">
@@ -44,7 +52,7 @@ function buildCard(it) {
           </svg>
         </div>
 
-        <img src="/img/${it.i}" alt="" class="block h-auto w-full object-cover select-none" />
+        <img src="${imgSrc}" alt="" class="block h-auto w-full object-cover select-none" />
         <button type="button" class="select absolute inset-0"></button>
       </div>
     </figure>
@@ -56,7 +64,7 @@ function buildCard(it) {
 	// expand
 	$card.find(".expand").on("click", (e) => {
 		e.stopPropagation();
-		$modalImg.attr("src", `/img/${it.i}`);
+		$modalImg.attr("src", imgSrc);
 		$modal.removeClass("hidden");
 	});
 
@@ -145,12 +153,57 @@ function selectRecommended() {
 	macy.recalculate(true);
 }
 
+function updateHeaderControls() {
+  const $gs = $("#group-status");
+  const $prev = $("#prev-group");
+  const $next = $("#next-group");
+  const $save = $("#save");
+  const $finish = $("#finish");
+
+  if (!multiMode) {
+    $gs.addClass("hidden");
+    $prev.addClass("hidden");
+    $next.addClass("hidden");
+    $finish.addClass("hidden");
+    $save.removeClass("hidden");
+    return;
+  }
+
+  const total = groups.length;
+  $gs.text(`Group ${currentGroup + 1} of ${total}`).removeClass("hidden");
+  $prev.toggleClass("hidden", currentGroup === 0);
+  $next.toggleClass("hidden", currentGroup >= total - 1);
+  $save.addClass("hidden");
+  $finish.toggleClass("hidden", currentGroup < total - 1 ? true : false);
+}
+
+function loadGroup(gi) {
+  currentGroup = gi;
+  const g = groups[gi];
+  // Build items payload with group index carried through
+  items = g.items.map((it) => ({ ...it, gi }));
+  // Set selected from per-group selection set
+  const sel = groupSelections[gi] || new Set();
+  selected = new Set(sel);
+  renderAll();
+  updateHeaderControls();
+}
+
 async function load() {
 	try {
 		const data = await $.getJSON("/api/data");
-		items = data.items || [];
-		selected = new Set(items.filter((x) => x.recommended).map((x) => x.i));
-		renderAll();
+		if (Array.isArray(data.groups)) {
+			groups = data.groups;
+			multiMode = true;
+			// Initialize selections from recommended
+			groupSelections = groups.map((g) => new Set(g.items.filter((x) => x.recommended).map((x) => x.i)));
+			loadGroup(0);
+		} else {
+			items = data.items || [];
+			selected = new Set(items.filter((x) => x.recommended).map((x) => x.i));
+			renderAll();
+			updateHeaderControls();
+		}
 	} catch (err) {
 		console.error(err);
 		$grid.empty();
@@ -175,8 +228,8 @@ async function save() {
 			contentType: "application/json",
 			data: JSON.stringify({ keep }),
 		});
-		// alert("Saved!");
-		if (typeof window.close === "function") window.close();
+		// Success popup
+		$done.removeClass("hidden");
 	} catch (err) {
 		console.error(err);
 		// alert("Failed to save");
@@ -194,11 +247,51 @@ $(() => {
 	$("#select-rec").on("click", selectRecommended);
 	$("#save").on("click", save);
 
+	$("#prev-group").on("click", () => {
+		if (!multiMode) return;
+		// Persist current selections
+		groupSelections[currentGroup] = new Set(Array.from(selected));
+		if (currentGroup > 0) loadGroup(currentGroup - 1);
+	});
+	$("#next-group").on("click", () => {
+		if (!multiMode) return;
+		groupSelections[currentGroup] = new Set(Array.from(selected));
+		if (currentGroup < groups.length - 1) loadGroup(currentGroup + 1);
+	});
+	$("#finish").on("click", async () => {
+		if (!multiMode) return;
+		groupSelections[currentGroup] = new Set(Array.from(selected));
+		const results = groupSelections.map((set) => Array.from(set).sort((a, b) => a - b));
+
+		const $btn = $("#finish");
+		const original = $btn.text();
+		$btn.prop("disabled", true).addClass("opacity-70 cursor-not-allowed").text("Saving...");
+		try {
+			await $.ajax({
+				url: "/api/decide",
+				method: "POST",
+				contentType: "application/json",
+				data: JSON.stringify({ results }),
+			});
+			// Success popup
+			$done.removeClass("hidden");
+		} catch (err) {
+			console.error(err);
+		} finally {
+			$btn.prop("disabled", false).removeClass("opacity-70 cursor-not-allowed").text(original);
+		}
+	});
+
 	$("#modal-close, #modal").on("click", (e) => {
 		if (e.target.id === "modal" || e.target.id === "modal-close") {
 			$modal.addClass("hidden");
 			$modalImg.attr("src", "");
 		}
+	});
+
+	$("#done-dismiss").on("click", () => $done.addClass("hidden"));
+	$("#done-close-tab").on("click", () => {
+		try { if (typeof window.close === "function") window.close(); } catch {}
 	});
 
 	load();
