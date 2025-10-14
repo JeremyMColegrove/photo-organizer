@@ -1,11 +1,16 @@
 // src/vision.ts
-
-import tf from "@tensorflow/tfjs-node";
-import faceapi from "@vladmandic/face-api";
 import fs from "node:fs/promises";
 
 export const isWindows = process.platform === "win32";
 let modelsLoaded = false;
+
+let faceapi: typeof import("@vladmandic/face-api") | null = null;
+let tf: typeof import("@tensorflow/tfjs-node") | null = null;
+
+if (!isWindows) {
+	faceapi = await import("@vladmandic/face-api");
+	tf = await import("@tensorflow/tfjs-node");
+}
 
 export async function ensureFaceApi(modelsDir: string): Promise<void> {
 	if (modelsLoaded) return;
