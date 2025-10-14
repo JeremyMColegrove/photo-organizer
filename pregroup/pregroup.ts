@@ -31,7 +31,7 @@ export default async function preGroupPhotos(
 
 		try {
 			const best = await getClassifierScore(labels, img.path);
-			console.log(img.path, best);
+
 			if (!best) {
 				b.increment();
 				continue;
