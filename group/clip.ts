@@ -2,7 +2,7 @@ import {
 	type ImageFeatureExtractionPipeline,
 	pipeline,
 	RawImage,
-	type ZeroShotAudioClassificationOutput,
+	type ZeroShotImageClassificationOutput,
 	type ZeroShotImageClassificationPipeline,
 } from "@huggingface/transformers";
 import exifr from "exifr";
@@ -68,12 +68,12 @@ export async function getClipEmbedding(imagePath: string): Promise<number[]> {
 export async function getClassifierScore(
 	keywords: string[],
 	imagePath: string,
-): Promise<ZeroShotAudioClassificationOutput | null> {
+): Promise<ZeroShotImageClassificationOutput | null> {
 	// Lazily load model — we can reuse imageEmbedder (it’s same architecture)
 	const classifier = await loadClassifierModel();
 	if (!classifier) return null;
 
-	const img = await RawImage.fromURL(imagePath);
+	const img = await RawImage.read(imagePath);
 	const result = await classifier(img, keywords, {
 		hypothesis_template: "a photo of {}",
 	});
