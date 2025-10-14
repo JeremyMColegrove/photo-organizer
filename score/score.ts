@@ -1,7 +1,7 @@
 import path from "node:path";
 import sharp from "sharp";
 import bar from "../bar";
-import { ensureFaceApi, faceapi, tf } from "./vision";
+import { ensureFaceApi, faceapi, isWindows, tf } from "./vision";
 
 /** Weights for composite score */
 const WEIGHTS: Readonly<ScoreBreakdown> = {
@@ -172,6 +172,10 @@ function eyesOpenScore(lEAR: number, rEAR: number): number {
 export async function computeFaceSignals(
 	buffer: Buffer,
 ): Promise<{ facePresence: number; eyesOpen: number; smiling: number }> {
+	if (isWindows) {
+		return { facePresence: 0, eyesOpen: 0, smiling: 0 };
+	}
+
 	// Decode to tensor (RGB)
 	const tensor = tf.node.decodeImage(buffer, 3) as tf.Tensor3D;
 	try {
@@ -262,7 +266,9 @@ export async function scoreImage(
 	filePath: string,
 	modelsDir: string,
 ): Promise<ImageScore> {
-	await ensureFaceApi(modelsDir);
+	if (!isWindows) {
+		await ensureFaceApi(modelsDir);
+	}
 
 	const buffer = await sharp(filePath).toFormat("png").toBuffer();
 

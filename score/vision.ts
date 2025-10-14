@@ -1,9 +1,10 @@
 // src/vision.ts
 
-import * as tf from "@tensorflow/tfjs-node";
-import * as faceapi from "@vladmandic/face-api";
+import tf from "@tensorflow/tfjs-node";
+import faceapi from "@vladmandic/face-api";
 import fs from "node:fs/promises";
 
+export const isWindows = process.platform === "win32";
 let modelsLoaded = false;
 
 export async function ensureFaceApi(modelsDir: string): Promise<void> {
@@ -16,9 +17,9 @@ export async function ensureFaceApi(modelsDir: string): Promise<void> {
 	}
 
 	// Load the three nets we use
-	await faceapi.nets.ssdMobilenetv1.loadFromDisk(modelsDir);
-	await faceapi.nets.faceLandmark68Net.loadFromDisk(modelsDir);
-	await faceapi.nets.faceExpressionNet.loadFromDisk(modelsDir);
+	await faceapi?.nets.ssdMobilenetv1.loadFromDisk(modelsDir);
+	await faceapi?.nets.faceLandmark68Net.loadFromDisk(modelsDir);
+	await faceapi?.nets.faceExpressionNet.loadFromDisk(modelsDir);
 
 	modelsLoaded = true;
 }
