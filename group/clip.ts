@@ -40,7 +40,7 @@ async function loadClassifierModel() {
 	if (!textEmbedder) {
 		textEmbedder = await pipeline(
 			"zero-shot-image-classification",
-			"Xenova/siglip-large-patch16-256",
+			"Xenova/siglip-large-patch16-384",
 			{ dtype: "auto", device: "auto" },
 		);
 	}
