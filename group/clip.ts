@@ -8,6 +8,7 @@ import {
 import exifr from "exifr";
 import fs from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import phash from "sharp-phash";
 import bar from "../bar";
 
@@ -39,7 +40,7 @@ async function loadClassifierModel() {
 	if (!textEmbedder) {
 		textEmbedder = await pipeline(
 			"zero-shot-image-classification",
-			"Xenova/siglip-base-patch16-512",
+			"Xenova/siglip-large-patch16-256",
 			{ dtype: "auto", device: "auto" },
 		);
 	}
@@ -73,8 +74,33 @@ export async function getClassifierScore(
 	const classifier = await loadClassifierModel();
 	if (!classifier) return null;
 
-	const img = await RawImage.read(imagePath);
-	const result = await classifier(img, keywords, {
+	// const img = await RawImage.read(imagePath);
+	// use sharp to convert to better format (jpg)
+	const buffer = await sharp(imagePath)
+		.rotate() // honor EXIF orientation
+		.toColorspace("srgb") // models are trained in sRGB
+		.removeAlpha() // or .flatten({ background: "#fff" }) if you want white bg
+		.resize({
+			width: 224,
+			height: 224,
+			fit: "cover",
+			position: "attention", // auto-crop toward salient region (or "entropy")
+			withoutEnlargement: true,
+			fastShrinkOnLoad: true,
+		})
+		.jpeg({
+			quality: 92, // keep artifacts low for embeddings
+			mozjpeg: true, // better psychovisually
+			chromaSubsampling: "4:4:4", // preserve color detail (avoid 4:2:0 smearing)
+			trellisQuantisation: true,
+			overshootDeringing: true,
+			optimizeScans: true,
+			progressive: true,
+		})
+		.toBuffer();
+
+	const raw = await RawImage.fromBlob(new Blob([buffer]));
+	const result = await classifier(raw, keywords, {
 		hypothesis_template: "a photo of {}",
 	});
 	return result.flat().at(0) ?? null;
