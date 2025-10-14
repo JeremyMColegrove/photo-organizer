@@ -1,8 +1,6 @@
 import path from "node:path";
 import sharp from "sharp";
 import bar from "../bar";
-import type { ImageGroup } from "../group";
-import type { ImageScore, ScoreBreakdown } from "./types";
 import { ensureFaceApi, faceapi, tf } from "./vision";
 
 /** Weights for composite score */
@@ -229,8 +227,7 @@ export async function computeFaceSignals(
 	}
 }
 
-export type ScoreEntry = { path: string; score: ImageScore; keep: boolean };
-export type ScoreGroup = ScoreEntry[];
+// ScoreEntry and ScoreGroup are now globally defined in global.d.ts
 
 export async function scoreImages(
 	group: ImageGroup[],

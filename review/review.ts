@@ -1,8 +1,7 @@
 // review-bun.ts — Bun 1.1+
 // Usage: const keep = await reviewGroupBun(group, { htmlPath: 'path/to/review.html' });
 
-import type { ScoreEntry } from "../score/score";
-import type { ImageScore } from "../score/types";
+// ScoreEntry and ImageScore are provided globally via global.d.ts
 
 type Options = {
 	port?: number; // default 8787

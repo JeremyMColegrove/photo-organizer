@@ -1,22 +1,9 @@
 import exifr from "exifr";
 import fs from "node:fs";
-import path from "node:path";
 import phash from "sharp-phash";
 import bar from "../bar";
 import { cosineSimilarity, getClipEmbedding } from "./clip";
 
-type Entry = { path: string };
-export type ImageGroup = Entry[];
-
-interface GroupOptions {
-	/** pHash similarity threshold (0–1), default 0.85 */
-	phash?: number;
-	/** minutes apart to group together, default 1 */
-	secondsSeparated?: number;
-	/** threshold for photo to be considered similar, default 0.8 */
-	cosineSimilarityThreshold?: number;
-	cosineMaxMinutes?: number;
-}
 type Image = {
 	path: string;
 	hash: string | null;
@@ -25,31 +12,15 @@ type Image = {
 };
 
 export async function groupPhotos(
-	folder: string,
-	options: GroupOptions = {},
+    files: FileList,
+    options: GroupOptions = {},
 ): Promise<ImageGroup[]> {
-	const phashThreshold = options.phash ?? 0.85;
-	const secondsSeparated = options.secondsSeparated ?? 10;
-	const cosineSimilarityThreshold = options.cosineSimilarityThreshold ?? 0.8;
-	const cosineMaxMinutes = options.cosineMaxMinutes ?? 60 * 24; // same day
+    const phashThreshold = options.phash ?? 0.85;
+    const secondsSeparated = options.secondsSeparated ?? 10;
+    const cosineSimilarityThreshold = options.cosineSimilarityThreshold ?? 0.8;
+    const cosineMaxMinutes = options.cosineMaxMinutes ?? 60 * 24; // same day
 
-	const files = fs
-		.readdirSync(folder)
-		.filter((f) => /\.(jpg|jpeg|png|webp|heic|heif)$/i.test(f))
-		.map((f) => path.join(folder, f));
-
-	const photos: Image[] = [];
-
-	const b = bar.start(0, files.length, { task: "Clipping images" });
-	for (const file of files) {
-		b.increment();
-		// todo I want to show a
-		const hash = await safePhash(file);
-		const time = await getCaptureTime(file);
-		const clip = await getClipEmbedding(file);
-		photos.push({ path: file, hash, time, clip });
-	}
-	b.complete();
+    const photos = await buildPhotosFromFiles(files);
 
 	const groups = groupPhotosTransitive(photos, {
 		cosineSimilarityThreshold,
@@ -59,6 +30,7 @@ export async function groupPhotos(
 	});
 	return groups;
 }
+
 
 /**
  * Builds groups by taking the transitive closure of the similarity relation.
@@ -196,4 +168,18 @@ function phashSimilarity(a: string, b: string): number {
 		bits++;
 	}
 	return 1 - bits / 64;
+}
+
+async function buildPhotosFromFiles(files: FileList): Promise<Image[]> {
+	const photos: Image[] = [];
+	const b = bar.start(0, files.length, { task: "Clipping images" });
+	for (const file of files) {
+		b.increment();
+		const hash = await safePhash(file);
+		const time = await getCaptureTime(file);
+		const clip = await getClipEmbedding(file);
+		photos.push({ path: file, hash, time, clip });
+	}
+	b.complete();
+	return photos;
 }

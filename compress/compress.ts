@@ -73,3 +73,60 @@ export async function compressImagesInFolder(
 		);
 	}
 }
+
+/**
+ * New: compress only the provided files.
+ */
+export async function compressImages(
+	files: FileList,
+	maxSizeKB = 500,
+): Promise<void> {
+	const b = bar.start(0, files.length, { task: "Compressing" });
+	let totalOriginalBytes = 0;
+	let totalCompressedBytes = 0;
+	let processedCount = 0;
+	for (const inputPath of files) {
+		b.increment();
+		try {
+			const buffer = await fs.readFile(inputPath);
+			if (buffer.byteLength / 1024 < maxSizeKB) continue;
+
+			const image = sharp(buffer, { failOn: "none" });
+			const metadata = await image.metadata();
+			const quality = 80;
+			const compressed = await sharp(buffer)
+				.rotate()
+				.resize({
+					width: metadata.width && metadata.width > 4000 ? 4000 : undefined,
+					height: metadata.height && metadata.height > 4000 ? 4000 : undefined,
+					fit: "inside",
+					withoutEnlargement: true,
+				})
+				.jpeg({
+					quality,
+					mozjpeg: true,
+					chromaSubsampling: "4:2:0",
+					progressive: true,
+				})
+				.withMetadata({ orientation: 1 })
+				.toBuffer();
+
+			totalOriginalBytes += buffer.byteLength;
+			totalCompressedBytes += compressed.byteLength;
+			processedCount++;
+
+			await fs.writeFile(inputPath, compressed);
+		} catch {
+			// ignore individual file failures
+		}
+	}
+	b.complete();
+
+	if (processedCount > 0 && totalOriginalBytes > 0) {
+		const improvement =
+			((totalOriginalBytes - totalCompressedBytes) / totalOriginalBytes) * 100;
+		console.log(
+			`Compression improvement: ${improvement.toFixed(2)}% over ${processedCount} image(s).`,
+		);
+	}
+}

@@ -1,3 +1,4 @@
+import fg from "fast-glob";
 import fs from "node:fs";
 import path from "node:path";
 import { hideBin } from "yargs/helpers";
@@ -5,13 +6,19 @@ import yargs from "yargs/yargs";
 import { compressImagesInFolder } from "./compress/compress";
 import { groupPhotos } from "./group";
 import { moveDups } from "./moves/move";
-import { tagAndRenameImages } from "./rename/rename";
+import { tagAndRenameFiles } from "./rename/rename";
 import { reviewGroupBun } from "./review/review";
 import { scoreImages } from "./score/score";
 
 const MODELS_DIR = path.resolve("models");
 
-type Step = "group" | "move" | "rename" | "compress";
+// Step type now provided globally via global.d.ts
+
+const DEFAULT_EXTS = ["jpg", "jpeg", "png", "webp", "heic", "heif"];
+
+function buildGlobPattern(exts: string[]): string {
+	return `*.{${exts.join(",")}}`;
+}
 
 function saveLog(json: unknown, name: string) {
 	fs.writeFileSync(name, JSON.stringify(json));
@@ -24,16 +31,49 @@ async function main() {
 			demandOption: true,
 			describe: "Folder containing photos to organize",
 		})
+		.option("ext", {
+			type: "string",
+			default: DEFAULT_EXTS.join(","),
+			describe: "Comma-separated extensions to include (lowercase)",
+		})
 		.option("skip", {
 			type: "string",
 			default: "",
 			describe: "Comma-separated steps to skip: group,move,rename,compress",
+		})
+		.option("rename-model", {
+			type: "string",
+			default: "llava:7b",
+			describe: "Vision model name for captioning (Ollama)",
+		})
+		.option("rename-delay", {
+			type: "number",
+			default: 100,
+			describe: "Delay between captions in ms (used when concurrency=1)",
+		})
+		.option("rename-tags", {
+			type: "number",
+			default: 5,
+			describe: "Number of words to include in filename",
+		})
+		.option("rename-limit", {
+			type: "number",
+			describe: "Limit number of images to rename",
+		})
+		.option("rename-concurrency", {
+			type: "number",
+			default: 3,
+			describe: "How many images to caption in parallel",
 		})
 		.strict()
 		.help()
 		.parseAsync();
 
 	const folder = path.resolve(String(argv.folder));
+	const exts = String(argv.ext)
+		.split(",")
+		.map((s) => s.trim().toLowerCase())
+		.filter(Boolean);
 	const skipSet = new Set(
 		String(argv.skip)
 			.split(",")
@@ -42,17 +82,27 @@ async function main() {
 	);
 
 	const shouldRun = (s: Step) => !skipSet.has(s);
+	// Glob once and pass files to steps
+	const pattern = buildGlobPattern(exts);
+	const filesRel = await fg([pattern], {
+		cwd: folder,
+		onlyFiles: true,
+		unique: true,
+		dot: false,
+		caseSensitiveMatch: false,
+	});
+	const filesAbs = filesRel.map((f) => path.join(folder, f));
 
 	let groups: Awaited<ReturnType<typeof groupPhotos>> | undefined;
 	let scored: Awaited<ReturnType<typeof scoreImages>> | undefined;
 	const chosen: Awaited<ReturnType<typeof scoreImages>> = [];
 	// 1) Group similar photos
 	if (shouldRun("group")) {
-		groups = await groupPhotos(folder, {
-			secondsSeparated: 3,
+		groups = await groupPhotos(filesAbs, {
+			secondsSeparated: 5,
 			phash: 0.8,
-			cosineSimilarityThreshold: 0.9,
-			cosineMaxMinutes: 60 * 24,
+			cosineSimilarityThreshold: 0.8,
+			cosineMaxMinutes: 60 * 12,
 		});
 		saveLog(groups, "groups.json");
 		scored = await scoreImages(groups, MODELS_DIR);
@@ -87,12 +137,23 @@ async function main() {
 		console.log("Skipping: move");
 	}
 
-	// 4) Tag and rename images in place
+	// 4) Tag and rename images in place using provided file list
 	if (shouldRun("rename")) {
-		await tagAndRenameImages(folder, {
-			delayMs: 100,
-			model: "llava:7b",
-			tagsInName: 5,
+		const keptFiles: string[] = chosen
+			.flat()
+			.filter((e) => e.keep)
+			.map((e) => e.path);
+		const listForRename = keptFiles.length > 0 ? keptFiles : filesAbs;
+
+		await tagAndRenameFiles(listForRename, {
+			delayMs: Number(argv["rename-delay"]) || 0,
+			model: String(argv["rename-model"]) || "llava:7b",
+			tagsInName: Number(argv["rename-tags"]) || 5,
+			limit:
+				typeof argv["rename-limit"] === "number"
+					? Number(argv["rename-limit"])
+					: undefined,
+			concurrency: 3, //Number(argv["rename-concurrency"]) || 3,
 		});
 	} else {
 		console.log("Skipping: rename");

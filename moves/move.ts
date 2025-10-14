@@ -1,7 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import bar from "../bar";
-import type { ScoreGroup } from "../score/score";
 
 /**
  * Moves all duplicate images (lower score in each group) to a destination folder.
@@ -15,12 +14,15 @@ export async function moveDups(
 	dest: string,
 ): Promise<void> {
 	await fs.mkdir(dest, { recursive: true });
-	const total = groups.reduce((a, c) => a + c.length - 1, 0);
+	groups = groups.map((g) => g.filter((ele) => !ele.keep));
+	const total = groups.reduce((a, c) => a + c.length, 0);
 	const b = bar.start(0, total, { task: "Moving duplicates" });
 	for (const group of groups) {
-		if (group.length <= 1) continue;
-		const toMove = group.filter((g) => !g.keep);
-		for (const img of toMove) {
+		if (group.length <= 1) {
+			continue;
+		}
+
+		for (const img of group) {
 			b.increment();
 			const srcPath = path.resolve(img.path);
 			const destPath = path.resolve(dest, path.basename(img.path));

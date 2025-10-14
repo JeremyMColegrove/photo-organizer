@@ -1,95 +1,84 @@
-import fg from "fast-glob";
+import nlp from "compromise";
 import fs from "node:fs/promises";
 import path from "node:path";
 import ollama from "ollama";
+import sharp from "sharp";
 import bar from "../bar";
 
-type TaggerOptions = {
-	/** Vision model name (must support images) */
-	model?: string; // default: llava:13b
-	/** Max files to process; omit for all */
-	limit?: number;
-	/** Delay between files (ms) */
-	delayMs?: number; // default: 800
-	/** number of tags to include in filename (1-8 is good) */
-	tagsInName?: number; // default: 5
-
-	prefix?: string;
-	suffix?: string;
-	separator?: string;
-};
+// TaggerOptions is now globally defined in global.d.ts
 
 const DEFAULTS: Required<Omit<TaggerOptions, "limit">> = {
 	model: "llava:7b",
-	delayMs: 800,
+	delayMs: 0,
 	tagsInName: 5,
 	prefix: "",
 	suffix: "",
 	separator: "-",
+	concurrency: 3,
 };
 
 /**
- * Main entry: walks the folder, tags each image with a local vision model, and renames it.
+ * New: tag and rename a provided file list (absolute paths recommended).
  */
-export async function tagAndRenameImages(
-	folder: string,
+export async function tagAndRenameFiles(
+	files: FileList,
 	opts: TaggerOptions = {},
 ): Promise<void> {
 	const o = { ...DEFAULTS, ...opts };
-
-    const files = await fg(["*.{jpg,jpeg,png,webp,bmp,gif,tiff,heic,heif}"], {
-        cwd: folder,
-        onlyFiles: true,
-        dot: false,
-        unique: true,
-        // Ensure uppercase extensions are matched too across platforms
-        caseSensitiveMatch: false,
-    });
-	const selected = files.slice(0, opts.limit);
+	const selected = opts.limit ? files.slice(0, opts.limit) : [...files];
 
 	if (selected.length === 0) {
-		console.log("No images found.");
+		console.log("No images provided.");
 		return;
 	}
 
 	const b = bar.start(0, selected.length, { task: "Captioning photos" });
-	for (let i = 0; i < selected.length; i++) {
-		const rel = selected[i];
-		const abs = path.resolve(folder, rel as string);
-		try {
-			const tags = await generateTags(abs, o);
 
-			if (!tags.length) {
+	// Simple single-threaded processing for clarity
+	for (const [i, f] of selected.entries()) {
+		const abs = path.resolve(String(f));
+		const rel = path.basename(abs);
+		try {
+			const buffer = await sharp(abs)
+				.jpeg({
+					quality: 70,
+				})
+				.resize({
+					width: 672,
+					height: 672,
+					fit: "cover",
+					withoutEnlargement: true,
+				})
+				.toBuffer();
+
+			const tags = await generateTagsFromBuffer(buffer, o);
+
+			if (!tags || !tags.length) {
 				console.log(`(${i + 1}/${selected.length}) Skipped (no tags): ${rel}`);
 			} else {
 				await proposeRename(abs, tags, o.tagsInName, opts);
 			}
-		} catch (err) {
-			console.warn(
-				`\n(${i + 1}/${selected.length}):`,
-				err instanceof Error ? err.message : String(err),
-			);
+		} catch (e) {
+			console.error(e);
+			// skip
 		} finally {
 			b.increment();
 		}
-
-		// slow it down between files
-		if (o.delayMs > 0 && i < selected.length - 1) {
-			await sleep(o.delayMs);
-		}
 	}
+
 	b.complete();
 }
 
 /* ---------------- helpers ---------------- */
-
-async function generateTags(
-	imagePath: string,
+// const pline = await pipeline(
+// 	"image-to-text",
+// 	"Xenova/vit-gpt2-image-captioning",
+// 	{ dtype: "fp32", device: "gpu" },
+// );
+async function generateTagsFromBuffer(
+	buffer: Buffer,
 	o: Required<Omit<TaggerOptions, "limit">>,
 ): Promise<string[]> {
-	// read and encode the image (Ollama expects base64 for image parts)
-	const base64 = await fs.readFile(imagePath); //.then((b) => b.toString("base64"));
-
 	// ask the model for compact, lowercase keywords as a JSON array
 	const userPrompt =
 		"You are naming a photograph for file organization. \
@@ -105,15 +94,39 @@ async function generateTags(
 		model: o.model,
 		stream: false,
 		prompt: userPrompt,
-		images: [base64],
+		images: [buffer],
+		keep_alive: "5m",
 	});
 
-	const raw = res.response?.trim() ?? "[]";
+	const raw = res.response?.trim() ?? "";
 
-	const tags: string[] = raw.replaceAll(/[^a-zA-Z ]/g, "").split(" ");
+	const tags: string = raw.replaceAll(/[^a-zA-Z ]/g, "");
+	const doc = nlp(tags);
+	const nouns = doc
+		.match("#Noun")
+		.text()
+		.split(" ")
+		.filter((x) => !forbidden.includes(x));
+	return nouns;
+	// const out = await pline(new Blob([buffer]));
+	// console.log(out);
+	// const res = out[0];
 
-	return dedupePreservingOrder(tags);
+	// const word =
+	// 	(Array.isArray(res) ? res.at(0)?.generated_text : res?.generated_text) ??
+	// 	"";
+
+	// const doc = nlp(word);
+	// const nouns = doc
+	// 	.match("#Noun")
+	// 	.text()
+	// 	.split(" ")
+	// 	.filter((x) => !forbidden.includes(x));
+	// console.log(nouns);
+	// return nouns;
 }
+
+const forbidden = ["man", "woman", "person", "group", "people", "picture"];
 
 async function proposeRename(
 	absPath: string,
@@ -181,19 +194,6 @@ async function ensureUniquePath(p: string): Promise<string> {
 			return candidate;
 		}
 	}
-}
-
-function dedupePreservingOrder<T>(arr: T[]): T[] {
-	const seen = new Set<string>();
-	const out: T[] = [];
-	for (const v of arr) {
-		const key = typeof v === "string" ? v : JSON.stringify(v);
-		if (!seen.has(key)) {
-			seen.add(key);
-			out.push(v);
-		}
-	}
-	return out;
 }
 
 function sleep(ms: number): Promise<void> {

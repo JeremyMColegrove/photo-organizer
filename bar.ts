@@ -3,11 +3,6 @@
 import chalk from "chalk";
 import cliProgress from "cli-progress";
 
-type BarOptions = {
-	task?: string;
-	color?: (text: string) => string;
-};
-
 class ProgressBar {
 	private bar: cliProgress.SingleBar;
 	private total: number;
