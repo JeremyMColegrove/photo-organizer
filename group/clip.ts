@@ -34,7 +34,7 @@ export async function getClipEmbedding(imagePath: string): Promise<number[]> {
 	const extractor = await pipeline(
 		"image-feature-extraction",
 		"xenova/clip-vit-base-patch32",
-		{ dtype: "q4", device: "cpu" },
+		{ dtype: "auto", device: "auto" },
 	);
 
 	const result = await extractor(imagePath, {

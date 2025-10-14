@@ -52,8 +52,9 @@ function bestIndexForGroup(group) {
 	return best;
 }
 
-function buildCard(it) {
+function buildCard(it, recIndex) {
 	const isChecked = selected.has(it.i);
+  const isRecommended = typeof recIndex === "number" && it.i === recIndex;
 
 	const imgSrc = multiMode ? `/img/${it.gi}/${it.i}` : `/img/${it.i}`;
 
@@ -61,6 +62,19 @@ function buildCard(it) {
     <figure class="avoid-break masonry-item">
       <div class="relative overflow-hidden rounded-xl border ${isChecked ? "border-emerald-500 border-2" : "border-zinc-800"} bg-zinc-900">
         <button type="button" class="expand absolute left-2 top-2 z-10 rounded-md bg-black/55 px-2 py-1 text-xs ring-1 ring-zinc-700 hover:bg-black/70">Expand</button>
+
+        ${
+          isRecommended
+            ? `
+        <div class="rec-badge absolute left-2 bottom-2 z-10 flex items-center gap-1 rounded-md bg-amber-400/95 px-2 py-1 text-xs font-semibold text-black ring-1 ring-amber-300/70 shadow">
+          <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+            <path d="M12 2l2.39 6.94H22l-5.7 4.14 2.39 6.92L12 15.86 5.31 20l2.39-6.92L2 8.94h7.61L12 2z" />
+          </svg>
+          <span>Recommended</span>
+        </div>
+        `
+            : ""
+        }
 
         <div class="check absolute right-2 top-2 z-10 ${isChecked ? "flex" : "hidden"} items-center justify-center rounded-full bg-emerald-600 p-1 ring-2 ring-emerald-400/60">
           <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="3">
@@ -113,8 +127,13 @@ function renderAll() {
 	}
 	$empty.addClass("hidden");
 
+	// Compute the recommended index for the current view
+	const recIndex = multiMode
+		? bestIndexForGroup(groups[currentGroup])
+		: bestIndexForGroup({ items });
+
 	const frag = document.createDocumentFragment();
-	for (const it of items) frag.appendChild(buildCard(it)[0]);
+	for (const it of items) frag.appendChild(buildCard(it, recIndex)[0]);
 	$grid[0].appendChild(frag);
 
 	// (Re)initialize masonry after elements are in the DOM

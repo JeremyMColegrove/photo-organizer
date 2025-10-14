@@ -12,15 +12,14 @@ type Image = {
 };
 
 export async function groupPhotos(
-    files: FileList,
-    options: GroupOptions = {},
+	files: FileList,
+	options: GroupOptions = {},
 ): Promise<ImageGroup[]> {
-    const phashThreshold = options.phash ?? 0.85;
-    const secondsSeparated = options.secondsSeparated ?? 10;
-    const cosineSimilarityThreshold = options.cosineSimilarityThreshold ?? 0.8;
-    const cosineMaxMinutes = options.cosineMaxMinutes ?? 60 * 24; // same day
-
-    const photos = await buildPhotosFromFiles(files);
+	const phashThreshold = options.phash ?? 0.85;
+	const secondsSeparated = options.secondsSeparated ?? 10;
+	const cosineSimilarityThreshold = options.cosineSimilarityThreshold ?? 0.8;
+	const cosineMaxMinutes = options.cosineMaxMinutes ?? 60 * 24; // same day
+	const photos = await buildPhotosFromFiles(files);
 
 	const groups = groupPhotosTransitive(photos, {
 		cosineSimilarityThreshold,
@@ -30,7 +29,6 @@ export async function groupPhotos(
 	});
 	return groups;
 }
-
 
 /**
  * Builds groups by taking the transitive closure of the similarity relation.

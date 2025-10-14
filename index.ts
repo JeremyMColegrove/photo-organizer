@@ -41,6 +41,12 @@ async function main() {
 			default: "",
 			describe: "Comma-separated steps to skip: group,move,rename,compress",
 		})
+		.option("skip-facial-recognition", {
+			type: "boolean",
+			default: false,
+			describe:
+				"Skips using facial recognition to determine best photo. This bypasses some libraries which can be problematic during installation.",
+		})
 		.option("rename-model", {
 			type: "string",
 			default: "llava:7b",

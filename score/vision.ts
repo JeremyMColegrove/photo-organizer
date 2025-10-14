@@ -7,12 +7,31 @@ let modelsLoaded = false;
 let faceapi: typeof import("@vladmandic/face-api") | null = null;
 let tf: typeof import("@tensorflow/tfjs-node") | null = null;
 
-if (!isWindows) {
+// Allow opting out via CLI flag regardless of OS
+export const skipFacialRecognition = (() => {
+	// Accept forms like:
+	// --skip-facial-recognition
+	// --skip-facial-recognition=true|false
+	// (yargs still leaves raw args in process.argv)
+	for (const a of process.argv) {
+		if (a === "--skip-facial-recognition") return true;
+		if (a.startsWith("--skip-facial-recognition=")) {
+			const v = a.split("=", 2)[1]?.toLowerCase();
+			if (v === "1" || v === "true" || v === "yes") return true;
+			if (v === "0" || v === "false" || v === "no") return false;
+			// If provided without a clear boolean, treat as enabled
+			return true;
+		}
+	}
+	return false;
+})();
+
+if (!skipFacialRecognition) {
 	faceapi = await import("@vladmandic/face-api");
 	tf = await import("@tensorflow/tfjs-node");
 } else {
 	console.log(
-		"⚠️ Windows detected, skipping facial recognition for recommending photo",
+		"⚠️ --skip-facial-recognition set, skipping facial recognition libraries",
 	);
 }
 

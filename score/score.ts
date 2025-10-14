@@ -1,9 +1,14 @@
+import type { Tensor3D } from "@tensorflow/tfjs-node";
+import type { Point } from "@vladmandic/face-api";
 import path from "node:path";
 import sharp from "sharp";
 import bar from "../bar";
-import { ensureFaceApi, faceapi, isWindows, tf } from "./vision";
-import type { Point } from "@vladmandic/face-api";
-import type { Tensor3D } from "@tensorflow/tfjs-node";
+import {
+	ensureFaceApi,
+	faceapi,
+	skipFacialRecognition,
+	tf,
+} from "./vision";
 
 /** Weights for composite score */
 const WEIGHTS: Readonly<ScoreBreakdown> = {
@@ -151,8 +156,7 @@ export async function computeSharpness(buffer: Buffer): Promise<number> {
 /** Eye Aspect Ratio (EAR) from 6 eye landmarks (68-pt model). */
 function ear(pts: Array<Point>): number {
 	if (!pts || pts.length !== 6) return 0;
-	const dist = (a: Point, b: Point) =>
-		Math.hypot(a.x - b.x, a.y - b.y);
+	const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 	const [p1, p2, p3, p4, p5, p6] = pts;
 	const num = dist(p2!, p6!) + dist(p3!, p5!);
 	const den = 2 * dist(p1!, p4!);
@@ -174,7 +178,7 @@ function eyesOpenScore(lEAR: number, rEAR: number): number {
 export async function computeFaceSignals(
 	buffer: Buffer,
 ): Promise<{ facePresence: number; eyesOpen: number; smiling: number }> {
-	if (isWindows) {
+	if (skipFacialRecognition) {
 		return { facePresence: 0, eyesOpen: 0, smiling: 0 };
 	}
 
@@ -273,7 +277,7 @@ export async function scoreImage(
 	filePath: string,
 	modelsDir: string,
 ): Promise<ImageScore> {
-	if (!isWindows) {
+	if (!skipFacialRecognition) {
 		await ensureFaceApi(modelsDir);
 	}
 
@@ -281,6 +285,7 @@ export async function scoreImage(
 
 	const { brightness, contrast } = await computeBrightnessContrast(buffer);
 	const sharpness = await computeSharpness(buffer);
+
 	const { facePresence, eyesOpen, smiling } = await computeFaceSignals(buffer);
 
 	const breakdown: ScoreBreakdown = {
