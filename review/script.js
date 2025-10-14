@@ -36,6 +36,22 @@ function initMasonry() {
 	});
 }
 
+// Returns the `i` of the highest-scored item in a group
+function bestIndexForGroup(group) {
+	let best = null;
+	let bestScore = -Infinity;
+	const arr = group && Array.isArray(group.items) ? group.items : [];
+	for (let k = 0; k < arr.length; k++) {
+		const it = arr[k];
+		const s = it && typeof it.score === "number" ? it.score : -Infinity;
+		if (s > bestScore) {
+			bestScore = s;
+			best = it.i;
+		}
+	}
+	return best;
+}
+
 function buildCard(it) {
 	const isChecked = selected.has(it.i);
 
@@ -130,7 +146,11 @@ function selectAll() {
 }
 
 function selectRecommended() {
-	const rec = new Set(items.filter((x) => x.recommended).map((x) => x.i));
+	// Use the helper across modes
+	const idx = multiMode
+		? bestIndexForGroup(groups[currentGroup])
+		: bestIndexForGroup({ items });
+	const rec = new Set(idx != null ? [idx] : []);
 	selected = rec;
 
 	$grid.find("figure").each((_, fig) => {
@@ -154,39 +174,39 @@ function selectRecommended() {
 }
 
 function updateHeaderControls() {
-  const $gs = $("#group-status");
-  const $prev = $("#prev-group");
-  const $next = $("#next-group");
-  const $save = $("#save");
-  const $finish = $("#finish");
+	const $gs = $("#group-status");
+	const $prev = $("#prev-group");
+	const $next = $("#next-group");
+	const $save = $("#save");
+	const $finish = $("#finish");
 
-  if (!multiMode) {
-    $gs.addClass("hidden");
-    $prev.addClass("hidden");
-    $next.addClass("hidden");
-    $finish.addClass("hidden");
-    $save.removeClass("hidden");
-    return;
-  }
+	if (!multiMode) {
+		$gs.addClass("hidden");
+		$prev.addClass("hidden");
+		$next.addClass("hidden");
+		$finish.addClass("hidden");
+		$save.removeClass("hidden");
+		return;
+	}
 
-  const total = groups.length;
-  $gs.text(`Group ${currentGroup + 1} of ${total}`).removeClass("hidden");
-  $prev.toggleClass("hidden", currentGroup === 0);
-  $next.toggleClass("hidden", currentGroup >= total - 1);
-  $save.addClass("hidden");
-  $finish.toggleClass("hidden", currentGroup < total - 1 ? true : false);
+	const total = groups.length;
+	$gs.text(`Group ${currentGroup + 1} of ${total}`).removeClass("hidden");
+	$prev.toggleClass("hidden", currentGroup === 0);
+	$next.toggleClass("hidden", currentGroup >= total - 1);
+	$save.addClass("hidden");
+	$finish.toggleClass("hidden", currentGroup < total - 1 ? true : false);
 }
 
 function loadGroup(gi) {
-  currentGroup = gi;
-  const g = groups[gi];
-  // Build items payload with group index carried through
-  items = g.items.map((it) => ({ ...it, gi }));
-  // Set selected from per-group selection set
-  const sel = groupSelections[gi] || new Set();
-  selected = new Set(sel);
-  renderAll();
-  updateHeaderControls();
+	currentGroup = gi;
+	const g = groups[gi];
+	// Build items payload with group index carried through
+	items = g.items.map((it) => ({ ...it, gi }));
+	// Set selected from per-group selection set
+	const sel = groupSelections[gi] || new Set();
+	selected = new Set(sel);
+	renderAll();
+	updateHeaderControls();
 }
 
 async function load() {
@@ -195,12 +215,17 @@ async function load() {
 		if (Array.isArray(data.groups)) {
 			groups = data.groups;
 			multiMode = true;
-			// Initialize selections from recommended
-			groupSelections = groups.map((g) => new Set(g.items.filter((x) => x.recommended).map((x) => x.i)));
+			// Initialize selections using highest-score per group
+			groupSelections = groups.map((g) => {
+				const idx = bestIndexForGroup(g);
+				return new Set(idx != null ? [idx] : []);
+			});
 			loadGroup(0);
 		} else {
 			items = data.items || [];
-			selected = new Set(items.filter((x) => x.recommended).map((x) => x.i));
+			// Single-mode: choose the overall highest-score item
+			const idx = bestIndexForGroup({ items });
+			selected = new Set(idx != null ? [idx] : []);
 			renderAll();
 			updateHeaderControls();
 		}
@@ -261,11 +286,16 @@ $(() => {
 	$("#finish").on("click", async () => {
 		if (!multiMode) return;
 		groupSelections[currentGroup] = new Set(Array.from(selected));
-		const results = groupSelections.map((set) => Array.from(set).sort((a, b) => a - b));
+		const results = groupSelections.map((set) =>
+			Array.from(set).sort((a, b) => a - b),
+		);
 
 		const $btn = $("#finish");
 		const original = $btn.text();
-		$btn.prop("disabled", true).addClass("opacity-70 cursor-not-allowed").text("Saving...");
+		$btn
+			.prop("disabled", true)
+			.addClass("opacity-70 cursor-not-allowed")
+			.text("Saving...");
 		try {
 			await $.ajax({
 				url: "/api/decide",
@@ -278,7 +308,10 @@ $(() => {
 		} catch (err) {
 			console.error(err);
 		} finally {
-			$btn.prop("disabled", false).removeClass("opacity-70 cursor-not-allowed").text(original);
+			$btn
+				.prop("disabled", false)
+				.removeClass("opacity-70 cursor-not-allowed")
+				.text(original);
 		}
 	});
 
@@ -291,7 +324,9 @@ $(() => {
 
 	$("#done-dismiss").on("click", () => $done.addClass("hidden"));
 	$("#done-close-tab").on("click", () => {
-		try { if (typeof window.close === "function") window.close(); } catch {}
+		try {
+			if (typeof window.close === "function") window.close();
+		} catch {}
 	});
 
 	load();

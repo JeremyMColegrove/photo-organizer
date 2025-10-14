@@ -78,6 +78,49 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <!-- Macy.js (tiny masonry) -->
     <script src="https://cdn.jsdelivr.net/npm/macy@2.5.1/dist/macy.min.js"></script>
+
+    <!-- API shape adapter: maps multi-group payload to expected shape -->
+    <script>
+      (function () {
+        if (!window.jQuery) return;
+        const $ = window.jQuery;
+        const origGetJSON = $.getJSON;
+        $.getJSON = function () {
+          const jq = origGetJSON.apply(this, arguments);
+          return new Promise((resolve, reject) => {
+            jq.then(
+              function (resp) {
+                try {
+                  if (
+                    resp &&
+                    Array.isArray(resp.groups) &&
+                    resp.groups.length > 0 &&
+                    Array.isArray(resp.groups[0])
+                  ) {
+                    const groups = resp.groups.map((grp) => ({
+                      items: grp.map((entry, i) => ({
+                        i,
+                        score:
+                          typeof entry?.score?.score === "number"
+                            ? entry.score.score
+                            : Number(entry?.score) || 0,
+                      })),
+                    }));
+                    resolve({ groups });
+                  } else {
+                    resolve(resp);
+                  }
+                } catch (e) {
+                  reject(e);
+                }
+              },
+              reject,
+            );
+          });
+        };
+      })();
+    </script>
+
     <!-- App -->
     <script src="/script.js"></script>
   </body>

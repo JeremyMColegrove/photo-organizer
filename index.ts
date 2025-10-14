@@ -107,6 +107,8 @@ async function main() {
 			htmlPath: "./review/index.html",
 			scriptPath: "./review/script.js",
 		});
+
+		// mark each group as keep or not
 		for (let gi = 0; gi < scored.length; gi++) {
 			const group = scored[gi]!;
 			const keepIdx = new Set(allKeeps[gi] || []);
@@ -117,7 +119,7 @@ async function main() {
 				})),
 			);
 		}
-		saveLog(scored, "groups.scored.json");
+		saveLog(chosen, "groups.scored.json");
 	} else {
 		console.log("⚠️ Skipping: group");
 	}
