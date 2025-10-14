@@ -2,6 +2,8 @@ import path from "node:path";
 import sharp from "sharp";
 import bar from "../bar";
 import { ensureFaceApi, faceapi, isWindows, tf } from "./vision";
+import type { Point } from "@vladmandic/face-api";
+import type { Tensor3D } from "@tensorflow/tfjs-node";
 
 /** Weights for composite score */
 const WEIGHTS: Readonly<ScoreBreakdown> = {
@@ -147,9 +149,9 @@ export async function computeSharpness(buffer: Buffer): Promise<number> {
 	return clamp01(sharpness);
 }
 /** Eye Aspect Ratio (EAR) from 6 eye landmarks (68-pt model). */
-function ear(pts: Array<faceapi.Point>): number {
+function ear(pts: Array<Point>): number {
 	if (!pts || pts.length !== 6) return 0;
-	const dist = (a: faceapi.Point, b: faceapi.Point) =>
+	const dist = (a: Point, b: Point) =>
 		Math.hypot(a.x - b.x, a.y - b.y);
 	const [p1, p2, p3, p4, p5, p6] = pts;
 	const num = dist(p2!, p6!) + dist(p3!, p5!);
@@ -177,12 +179,17 @@ export async function computeFaceSignals(
 	}
 
 	// Decode to tensor (RGB)
-	const tensor = tf.node.decodeImage(buffer, 3) as tf.Tensor3D;
+	const fa = faceapi;
+	const tfn = tf;
+	if (!fa || !tfn) {
+		return { facePresence: 0, eyesOpen: 0, smiling: 0 };
+	}
+	const tensor = tfn.node.decodeImage(buffer, 3) as Tensor3D;
 	try {
-		const detections = await faceapi
+		const detections = await fa
 			.detectAllFaces(
 				tensor,
-				new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }),
+				new fa.SsdMobilenetv1Options({ minConfidence: 0.3 }),
 			)
 			.withFaceLandmarks()
 			.withFaceExpressions();
