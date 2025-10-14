@@ -1,5 +1,5 @@
 import {
-	type FeatureExtractionPipeline,
+	type ImageFeatureExtractionPipeline,
 	pipeline,
 } from "@huggingface/transformers";
 
@@ -8,21 +8,21 @@ import {
 // env.useBrowserCache = false;
 
 // Singleton pipeline instance (auto-cached after first load)
-const imageEmbedder: FeatureExtractionPipeline | null = null;
+let imageEmbedder: ImageFeatureExtractionPipeline | null = null;
 
 /**
  * Loads CLIP model (lazy)
  */
-// async function loadModel() {
-// 	if (!imageEmbedder) {
-// 		imageEmbedder = await pipeline(
-// 			"feature-extraction",
-// 			"Xenova/clip-vit-base-patch32",
-// 			{ dtype: "q4", device: "cpu" },
-// 		);
-// 	}
-// 	return imageEmbedder;
-// }
+async function loadModel() {
+	if (!imageEmbedder) {
+		imageEmbedder = await pipeline(
+			"image-feature-extraction",
+			"xenova/clip-vit-base-patch32",
+			{ dtype: "auto", device: "auto" },
+		);
+	}
+	return imageEmbedder;
+}
 
 /**
  * Generates a CLIP embedding for the given image path.
@@ -31,14 +31,11 @@ const imageEmbedder: FeatureExtractionPipeline | null = null;
  */
 export async function getClipEmbedding(imagePath: string): Promise<number[]> {
 	// const bytes = fs.readFileSync(imagePath);
-	const extractor = await pipeline(
-		"image-feature-extraction",
-		"xenova/clip-vit-base-patch32",
-		{ dtype: "auto", device: "auto" },
-	);
+	const extractor = await loadModel();
+	if (!extractor) return [];
 
 	const result = await extractor(imagePath, {
-		//@ts-expect-error
+		//@ts-expect-error idk man
 		pooling: "mean",
 		normalize: true,
 	});
