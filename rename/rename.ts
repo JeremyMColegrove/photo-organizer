@@ -31,7 +31,7 @@ export async function tagAndRenameFiles(
 		console.log("No images provided.");
 		return;
 	}
-
+	console.log(`🤖 Using model ${o.model} for renaming files`);
 	const b = bar.start(0, selected.length, { task: "Captioning photos" });
 
 	// Simple single-threaded processing for clarity

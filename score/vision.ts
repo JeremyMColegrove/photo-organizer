@@ -10,6 +10,10 @@ let tf: typeof import("@tensorflow/tfjs-node") | null = null;
 if (!isWindows) {
 	faceapi = await import("@vladmandic/face-api");
 	tf = await import("@tensorflow/tfjs-node");
+} else {
+	console.log(
+		"⚠️ Windows detected, skipping facial recognition for recommending photo",
+	);
 }
 
 export async function ensureFaceApi(modelsDir: string): Promise<void> {
