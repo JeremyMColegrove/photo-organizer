@@ -16,12 +16,14 @@ export async function compressImagesInFolder(
 		(f) => f.isFile() && /\.(jpe?g|png|webp|heic|tiff)$/i.test(f.name),
 	);
 
-	const b = bar.start(0, images.length, { task: "Compressing" });
+	const b = bar.start(0, images.length, {
+		task: "Compressing",
+	});
 	let totalOriginalBytes = 0;
 	let totalCompressedBytes = 0;
 	let processedCount = 0;
 	for (const img of images) {
-		b.increment();
+		b.increment(0, { detail: path.basename(img.name) });
 		const inputPath = path.join(folderPath, img.name);
 		const outputPath = path.join(folderPath, img.name); // overwrite same file
 		const buffer = await fs.readFile(inputPath);
@@ -61,6 +63,7 @@ export async function compressImagesInFolder(
 
 		// Save compressed file
 		await fs.writeFile(outputPath, compressed);
+		b.increment();
 	}
 	b.complete();
 

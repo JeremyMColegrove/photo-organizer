@@ -1,5 +1,6 @@
 import exifr from "exifr";
 import fs from "node:fs";
+import path from "node:path";
 import phash from "sharp-phash";
 import bar from "../bar";
 import { cosineSimilarity, getClipEmbedding } from "./clip";
@@ -51,9 +52,12 @@ export function groupPhotosTransitive(
 	const used = new Set<string>();
 	const groups: ImageGroup[] = [];
 
-	const b = bar.start(0, photos.length, { task: "Grouping photos" });
+	const b = bar.start(0, photos.length, {
+		task: "Grouping photos",
+		detail: "Starting...",
+	});
 	for (const seed of photos) {
-		b.increment();
+		b.increment(1, { detail: path.basename(seed.path) });
 		if (used.has(seed.path)) continue;
 		// Start a new component with a flood-fill
 		const group: Image[] = [];
@@ -171,11 +175,12 @@ async function buildPhotosFromFiles(files: FileList): Promise<Image[]> {
 	const photos: Image[] = [];
 	const b = bar.start(0, files.length, { task: "Clipping images" });
 	for (const file of files) {
-		b.increment();
+		b.increment(0, { detail: path.basename(file) });
 		const hash = await safePhash(file);
 		const time = await getCaptureTime(file);
 		const clip = await getClipEmbedding(file);
 		photos.push({ path: file, hash, time, clip });
+		b.increment();
 	}
 	b.complete();
 	return photos;

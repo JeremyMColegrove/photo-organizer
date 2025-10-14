@@ -3,12 +3,7 @@ import type { Point } from "@vladmandic/face-api";
 import path from "node:path";
 import sharp from "sharp";
 import bar from "../bar";
-import {
-	ensureFaceApi,
-	faceapi,
-	skipFacialRecognition,
-	tf,
-} from "./vision";
+import { ensureFaceApi, faceapi, skipFacialRecognition, tf } from "./vision";
 
 /** Weights for composite score */
 const WEIGHTS: Readonly<ScoreBreakdown> = {
@@ -245,32 +240,35 @@ export async function computeFaceSignals(
 // ScoreEntry and ScoreGroup are now globally defined in global.d.ts
 
 export async function scoreImages(
-    group: ImageGroup[],
-    modelsDir: string,
+	group: ImageGroup[],
+	modelsDir: string,
 ): Promise<ScoreGroup[]> {
-    const ng = [];
-    const total = group.reduce((a, c) => a + c.length, 0);
-    const b = bar.start(0, total, { task: "Scoring images" });
-    for (let i = 0; i < group.length; i++) {
-        const g = group.at(i);
-        if (!g) continue;
-        const sg = await Promise.all(
-            g.map(async (x) => {
-                const score = await scoreImage(x.path, modelsDir);
-                // Increment per image so the bar reflects all images, not just groups
-                b.increment(1, { task: `Scoring ${path.basename(x.path)}` });
-                return {
-                    path: x.path,
-                    score: score,
-                    keep: false,
-                };
-            }),
-        );
-        ng.push(sg);
-    }
-    b.complete();
+	const ng = [];
+	const total = group.reduce((a, c) => a + c.length, 0);
+	const b = bar.start(0, total, {
+		task: "Scoring images",
+	});
+	for (let i = 0; i < group.length; i++) {
+		const g = group.at(i);
+		if (!g) continue;
+		const sg = await Promise.all(
+			g.map(async (x) => {
+				b.increment(0, { detail: path.basename(x.path) });
+				const score = await scoreImage(x.path, modelsDir);
+				// Increment per image so the bar reflects all images, not just groups
+				b.increment();
+				return {
+					path: x.path,
+					score: score,
+					keep: false,
+				};
+			}),
+		);
+		ng.push(sg);
+	}
+	b.complete();
 
-    return ng;
+	return ng;
 }
 
 /** New scoring using sharp + face-api.js */

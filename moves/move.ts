@@ -16,10 +16,13 @@ export async function moveDups(
 	await fs.mkdir(dest, { recursive: true });
 	groups = groups.map((g) => g.filter((ele) => !ele.keep));
 	const total = groups.reduce((a, c) => a + c.length, 0);
-	const b = bar.start(0, total, { task: "Moving duplicates" });
+	const b = bar.start(0, total, {
+		task: "Moving duplicates",
+		detail: "Staring...",
+	});
 	for (const group of groups) {
 		for (const img of group) {
-			b.increment();
+			b.increment(1, { detail: path.basename(img.path) });
 			const srcPath = path.resolve(img.path);
 			const destPath = path.resolve(dest, path.basename(img.path));
 

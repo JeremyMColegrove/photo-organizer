@@ -52,6 +52,7 @@ type CascadePaths = {
 // Progress bar options
 type BarOptions = {
 	task?: string;
+	detail?: string;
 	color?: (text: string) => string;
 };
 

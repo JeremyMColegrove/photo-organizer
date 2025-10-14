@@ -48,6 +48,7 @@ class ProgressBar {
 export default {
 	/** Start a new progress bar */
 	start(start: number, total: number, options?: BarOptions) {
+		options = { detail: "", ...options };
 		return new ProgressBar(start, total, options);
 	},
 };
