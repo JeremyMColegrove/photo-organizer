@@ -83,9 +83,8 @@ export function groupPhotosTransitive(
 			}
 		}
 
-		if (group.length > 1) {
-			groups.push(group.map((g) => ({ path: g.path })));
-		}
+		// Include all groups, even singletons, so scoring can reflect total photos
+		groups.push(group.map((g) => ({ path: g.path })));
 	}
 	b.complete();
 	return groups;

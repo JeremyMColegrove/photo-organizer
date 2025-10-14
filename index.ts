@@ -109,21 +109,49 @@ async function main() {
 		scored = await scoreImages(groups, MODELS_DIR);
 
 		// Multi-group review in a single session
-		const allKeeps = await reviewAllGroupsBun(scored, {
-			htmlPath: "./review/index.html",
-			scriptPath: "./review/script.js",
+		let allKeeps: number[][] = [];
+		// Only trigger review UI if there are groups with more than one image
+		const reviewGroupIndices: number[] = [];
+		const groupsToReview = scored.filter((grp, idx) => {
+			const needsReview = (grp?.length ?? 0) > 1;
+			if (needsReview) reviewGroupIndices.push(idx);
+			return needsReview;
 		});
+
+		if (groupsToReview.length > 0) {
+			allKeeps = await reviewAllGroupsBun(groupsToReview, {
+				htmlPath: "./review/index.html",
+				scriptPath: "./review/script.js",
+			});
+		} else {
+			// No groups to review (all singletons) — skip popup
+			allKeeps = [];
+		}
 
 		// mark each group as keep or not
 		for (let gi = 0; gi < scored.length; gi++) {
 			const group = scored[gi]!;
-			const keepIdx = new Set(allKeeps[gi] || []);
-			chosen.push(
-				group.map((ele, i) => ({
-					...ele,
-					keep: keepIdx.has(i),
-				})),
-			);
+			// If group had >1 image and was reviewed, map by its position in groupsToReview
+			if ((group?.length ?? 0) > 1) {
+				const reviewedPos = reviewGroupIndices.indexOf(gi);
+				const keepIdx = new Set(
+					reviewedPos >= 0 ? allKeeps[reviewedPos] || [] : [],
+				);
+				chosen.push(
+					group.map((ele, i) => ({
+						...ele,
+						keep: keepIdx.has(i),
+					})),
+				);
+			} else {
+				// Singletons: keep the only image
+				chosen.push(
+					group.map((ele, i) => ({
+						...ele,
+						keep: i === 0,
+					})),
+				);
+			}
 		}
 		saveLog(chosen, "groups.scored.json");
 	} else {

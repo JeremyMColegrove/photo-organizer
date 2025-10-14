@@ -245,31 +245,32 @@ export async function computeFaceSignals(
 // ScoreEntry and ScoreGroup are now globally defined in global.d.ts
 
 export async function scoreImages(
-	group: ImageGroup[],
-	modelsDir: string,
+    group: ImageGroup[],
+    modelsDir: string,
 ): Promise<ScoreGroup[]> {
-	const ng = [];
-	const total = group.reduce((a, c) => a + c.length, 0);
-	const b = bar.start(0, total, { task: "Scoring images" });
-	for (let i = 0; i < group.length; i++) {
-		const g = group.at(i);
-		if (!g) continue;
-		const sg = await Promise.all(
-			g.map(async (x) => {
-				const score = await scoreImage(x.path, modelsDir);
-				return {
-					path: x.path,
-					score: score,
-					keep: false,
-				};
-			}),
-		);
-		b.increment(sg.length);
-		ng.push(sg);
-	}
-	b.complete();
+    const ng = [];
+    const total = group.reduce((a, c) => a + c.length, 0);
+    const b = bar.start(0, total, { task: "Scoring images" });
+    for (let i = 0; i < group.length; i++) {
+        const g = group.at(i);
+        if (!g) continue;
+        const sg = await Promise.all(
+            g.map(async (x) => {
+                const score = await scoreImage(x.path, modelsDir);
+                // Increment per image so the bar reflects all images, not just groups
+                b.increment(1, { task: `Scoring ${path.basename(x.path)}` });
+                return {
+                    path: x.path,
+                    score: score,
+                    keep: false,
+                };
+            }),
+        );
+        ng.push(sg);
+    }
+    b.complete();
 
-	return ng;
+    return ng;
 }
 
 /** New scoring using sharp + face-api.js */
