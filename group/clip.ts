@@ -77,8 +77,8 @@ export async function getClassifierScore(
 	const result = await classifier(img, keywords, {
 		hypothesis_template: "a photo of {}",
 	});
-	const res = result.flat();
-	return res.reduce((a, c) => (c.score > a.score ? c : a));
+	return result.flat().at(0) ?? null;
+	// return res.reduce((a, c) => (c.score > a.score ? c : a));
 }
 
 /**
