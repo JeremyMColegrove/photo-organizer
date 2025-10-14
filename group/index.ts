@@ -1,26 +1,15 @@
-import exifr from "exifr";
-import fs from "node:fs";
 import path from "node:path";
-import phash from "sharp-phash";
 import bar from "../bar";
-import { cosineSimilarity, getClipEmbedding } from "./clip";
-
-type Image = {
-	path: string;
-	hash: string | null;
-	time: number | null;
-	clip: number[];
-};
+import { cosineSimilarity, type Image } from "./clip";
 
 export async function groupPhotos(
-	files: FileList,
+	photos: Image[],
 	options: GroupOptions = {},
 ): Promise<ImageGroup[]> {
 	const phashThreshold = options.phash ?? 0.85;
 	const secondsSeparated = options.secondsSeparated ?? 10;
 	const cosineSimilarityThreshold = options.cosineSimilarityThreshold ?? 0.8;
 	const cosineMaxMinutes = options.cosineMaxMinutes ?? 60 * 24; // same day
-	const photos = await buildPhotosFromFiles(files);
 
 	const groups = groupPhotosTransitive(photos, {
 		cosineSimilarityThreshold,
@@ -87,8 +76,10 @@ export function groupPhotosTransitive(
 			}
 		}
 
-		// Include all groups, even singletons, so scoring can reflect total photos
-		groups.push(group.map((g) => ({ path: g.path })));
+		if (group.length > 1) {
+			// Include all groups, even singletons, so scoring can reflect total photos
+			groups.push(group.map((g) => ({ path: g.path })));
+		}
 	}
 	b.complete();
 	return groups;
@@ -139,26 +130,6 @@ function areLinked(
 	);
 }
 
-async function safePhash(file: string): Promise<string | null> {
-	try {
-		return await phash(file);
-	} catch {
-		return null;
-	}
-}
-
-async function getCaptureTime(file: string): Promise<number | null> {
-	try {
-		const exif = await exifr.parse(file, ["DateTimeOriginal", "CreateDate"]);
-		const date: Date | undefined =
-			(exif as any)?.DateTimeOriginal || (exif as any)?.CreateDate;
-		return date ? date.getTime() : null;
-	} catch {
-		const stats = fs.statSync(file);
-		return stats.mtimeMs;
-	}
-}
-
 function phashSimilarity(a: string, b: string): number {
 	const A = BigInt("0x" + a);
 	const B = BigInt("0x" + b);
@@ -169,19 +140,4 @@ function phashSimilarity(a: string, b: string): number {
 		bits++;
 	}
 	return 1 - bits / 64;
-}
-
-async function buildPhotosFromFiles(files: FileList): Promise<Image[]> {
-	const photos: Image[] = [];
-	const b = bar.start(0, files.length, { task: "Clipping images" });
-	for (const file of files) {
-		b.increment(0, { detail: path.basename(file) });
-		const hash = await safePhash(file);
-		const time = await getCaptureTime(file);
-		const clip = await getClipEmbedding(file);
-		photos.push({ path: file, hash, time, clip });
-		b.increment();
-	}
-	b.complete();
-	return photos;
 }

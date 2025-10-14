@@ -15,6 +15,7 @@ coverage
 bun.lock
 groups.json
 groups.scores.json
+pregroup.json
 # logs
 logs
 _.log
@@ -26,6 +27,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .env.test.local
 .env.production.local
 .env.local
+unwanted
 
 # caches
 .eslintcache

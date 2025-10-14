@@ -5,7 +5,9 @@ import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
 import { compressImagesInFolder } from "./compress/compress";
 import { groupPhotos } from "./group";
+import { buildPhotosFromFiles } from "./group/clip";
 import { moveDups } from "./moves/move";
+import preGroupPhotos from "./pregroup/pregroup";
 import { tagAndRenameFiles } from "./rename/rename";
 import { reviewAllGroupsBun } from "./review/review";
 import { scoreImages } from "./score/score";
@@ -14,7 +16,7 @@ const MODELS_DIR = path.resolve("models");
 
 // Step type now provided globally via global.d.ts
 
-const DEFAULT_EXTS = ["jpg", "jpeg", "png", "webp", "heic", "heif"];
+const DEFAULT_EXTS = ["jpg", "jpeg", "png", "webp", "heic", "avif", "heif"];
 
 function buildGlobPattern(exts: string[]): string {
 	return `*.{${exts.join(",")}}`;
@@ -26,10 +28,23 @@ function saveLog(json: unknown, name: string) {
 
 async function main() {
 	const argv = await yargs(hideBin(process.argv))
-		.option("folder", {
+		.option("path", {
 			type: "string",
 			demandOption: true,
-			describe: "Folder containing photos to organize",
+			describe: "Path containing photos to organize",
+		})
+		.option("out", {
+			type: "string",
+			demandOption: true,
+			default: "./duplicates",
+			describe: "Path where unwanted photos are moved to",
+		})
+		.option("group", {
+			type: "string",
+			demandOption: false,
+			default: "",
+			describe:
+				"List of comma-seperated keywords to pre-group by, e.g. screenshot,cat",
 		})
 		.option("ext", {
 			type: "string",
@@ -59,8 +74,8 @@ async function main() {
 		})
 		.option("rename-tags", {
 			type: "number",
-			default: 5,
-			describe: "Number of words to include in filename",
+			default: 3,
+			describe: "Max number of words to include in filename",
 		})
 		.option("rename-limit", {
 			type: "number",
@@ -70,7 +85,9 @@ async function main() {
 		.help()
 		.parseAsync();
 
-	const folder = path.resolve(String(argv.folder));
+	const folder = path.resolve(String(argv.path));
+	const out = path.resolve(String(argv.out));
+	const keywords = String(argv.group).split(",");
 	const exts = String(argv.ext)
 		.split(",")
 		.map((s) => s.trim().toLowerCase())
@@ -99,59 +116,43 @@ async function main() {
 	const chosen: Awaited<ReturnType<typeof scoreImages>> = [];
 	// 1) Group similar photos
 	if (shouldRun("group")) {
-		groups = await groupPhotos(filesAbs, {
+		const clipped = await buildPhotosFromFiles(filesAbs);
+
+		const pregroup = await preGroupPhotos(clipped, keywords, {
+			threshold: 0.22,
+		});
+
+		saveLog(pregroup, "pregroup.json");
+		const matched = new Set(pregroup.flat().map((x) => x.path));
+		//filter out pre-group matched from filesAbs to next group
+		const clippedRemaining = clipped.filter((v) => !matched.has(v.path));
+
+		groups = await groupPhotos(clippedRemaining, {
 			secondsSeparated: 5,
 			phash: 0.8,
 			cosineSimilarityThreshold: 0.8,
 			cosineMaxMinutes: 60 * 12,
 		});
+		// combine pregroup and groups
+		pregroup.filter((x) => x.length > 0).flat().length > 0 &&
+			groups.push(...pregroup.filter((x) => x.length > 0));
+
 		saveLog(groups, "groups.json");
 		scored = await scoreImages(groups, MODELS_DIR);
 
-		// Multi-group review in a single session
-		let allKeeps: number[][] = [];
-		// Only trigger review UI if there are groups with more than one image
-		const reviewGroupIndices: number[] = [];
-		const groupsToReview = scored.filter((grp, idx) => {
-			const needsReview = (grp?.length ?? 0) > 1;
-			if (needsReview) reviewGroupIndices.push(idx);
-			return needsReview;
-		});
-
-		if (groupsToReview.length > 0) {
-			allKeeps = await reviewAllGroupsBun(groupsToReview, {
+		if (scored.length > 0) {
+			const allKeeps = await reviewAllGroupsBun(scored, {
 				htmlPath: "./review/index.html",
 				scriptPath: "./review/script.js",
 			});
-		} else {
-			// No groups to review (all singletons) — skip popup
-			allKeeps = [];
-		}
 
-		// mark each group as keep or not
-		for (let gi = 0; gi < scored.length; gi++) {
-			const group = scored[gi]!;
-			// If group had >1 image and was reviewed, map by its position in groupsToReview
-			if ((group?.length ?? 0) > 1) {
-				const reviewedPos = reviewGroupIndices.indexOf(gi);
-				const keepIdx = new Set(
-					reviewedPos >= 0 ? allKeeps[reviewedPos] || [] : [],
-				);
-				chosen.push(
-					group.map((ele, i) => ({
-						...ele,
-						keep: keepIdx.has(i),
-					})),
-				);
-			} else {
-				// Singletons: keep the only image
-				chosen.push(
-					group.map((ele, i) => ({
-						...ele,
-						keep: i === 0,
-					})),
-				);
-			}
+			allKeeps.forEach((indices, groupIndex) => {
+				indices.forEach((i) => {
+					if (scored?.[groupIndex] && scored[groupIndex][i]) {
+						scored[groupIndex][i].keep = true;
+					}
+				});
+			});
 		}
 		saveLog(chosen, "groups.scored.json");
 	} else {
@@ -160,13 +161,13 @@ async function main() {
 
 	// 3) Move duplicates to a folder
 	if (shouldRun("move")) {
-		if (!chosen) {
+		if (!scored) {
 			throw new Error(
 				"Cannot run 'move' without scores. Either run scoring or remove 'move' from --skip.",
 			);
 		}
-		const dest = path.resolve("./duplicates");
-		await moveDups(chosen, dest);
+
+		await moveDups(scored, out);
 	} else {
 		console.log("⚠️ Skipping: move");
 	}
