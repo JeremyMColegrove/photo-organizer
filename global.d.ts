@@ -69,18 +69,23 @@ interface GroupOptions {
 
 // Options for rename/tagging pipeline
 type TaggerOptions = {
-	/** Vision model name (must support images) */
-	model?: string; // default: llava:13b
-	/** Max files to process; omit for all */
-	limit?: number;
-	/** Delay between files (ms) */
-	delayMs?: number; // default: 800
-	/** number of tags to include in filename (1-8 is good) */
-	tagsInName?: number; // default: 5
+    /** Vision model name (must support images) */
+    model?: string; // default: llava:13b
+    /** Max files to process; omit for all */
+    limit?: number;
+    /** Delay between files (ms) */
+    delayMs?: number; // default: 800
+    /** number of tags to include in filename (1-8 is good) */
+    tagsInName?: number; // default: 5
 
-	prefix?: string;
-	suffix?: string;
-	separator?: string;
-	/** How many images to caption in parallel */
-	concurrency?: number; // default: 3
+    prefix?: string;
+    suffix?: string;
+    separator?: string;
+    /** How many images to caption in parallel */
+    concurrency?: number; // default: 3
+
+    /** JPEG quality for preview passed to model */
+    previewQuality?: number; // default: 70
+    /** Resize square dimension for preview */
+    previewSize?: number; // default: 672
 };

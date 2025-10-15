@@ -20,7 +20,7 @@ pregroup.json
 logs
 _.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
-
+cli
 # dotenv environment variable files
 .env
 .env.development.local

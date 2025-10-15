@@ -5,35 +5,50 @@ import sharp from "sharp";
 import bar from "../bar";
 import { ensureFaceApi, faceapi, skipFacialRecognition, tf } from "./vision";
 
-/** Weights for composite score */
-const WEIGHTS: Readonly<ScoreBreakdown> = {
+/** Runtime-configurable scoring parameters */
+type ScoreConfig = {
+    weights: Readonly<ScoreBreakdown>;
+    analysisMaxDim: number;
+    faceMinConfidence: number;
+};
+
+let SCORE_CONFIG: ScoreConfig = {
+    /** Weights for composite score */
+    weights: {
 	brightness: 0.05, // correct exposure contributes modestly
 	contrast: 0.1, // too flat or too harsh penalized
 	sharpness: 0.1, // critical for overall clarity and perceived quality
 	facePresence: 0.15, // reward having a recognizable face
 	eyesOpen: 0.15, // important in portraits/selfies
 	smiling: 0.45, // slight boost for expressive/smiling subjects
+    },
+    analysisMaxDim: 256,
+    faceMinConfidence: 0.3,
 };
+
+export function setScoreConfig(cfg: Partial<ScoreConfig>) {
+    SCORE_CONFIG = { ...SCORE_CONFIG, ...cfg, weights: { ...SCORE_CONFIG.weights, ...(cfg.weights ?? {}) } };
+}
 
 function clamp01(x: number): number {
 	return Math.max(0, Math.min(1, x));
 }
 
 function weightedSum(b: ScoreBreakdown): number {
-	return clamp01(
-		b.brightness * WEIGHTS.brightness +
-			b.contrast * WEIGHTS.contrast +
-			b.sharpness * WEIGHTS.sharpness +
-			b.facePresence * WEIGHTS.facePresence +
-			b.eyesOpen * WEIGHTS.eyesOpen +
-			b.smiling * WEIGHTS.smiling,
-	);
+    return clamp01(
+		b.brightness * SCORE_CONFIG.weights.brightness +
+			b.contrast * SCORE_CONFIG.weights.contrast +
+			b.sharpness * SCORE_CONFIG.weights.sharpness +
+			b.facePresence * SCORE_CONFIG.weights.facePresence +
+			b.eyesOpen * SCORE_CONFIG.weights.eyesOpen +
+			b.smiling * SCORE_CONFIG.weights.smiling,
+    );
 }
 export async function computeBrightnessContrast(
-	buffer: Buffer,
+    buffer: Buffer,
 ): Promise<{ brightness: number; contrast: number }> {
-	// Downscale for performance (keep aspect, max dim 256), greyscale → 1 channel raw
-	const MAX_DIM = 256;
+    // Downscale for performance (keep aspect, max dim 256), greyscale → 1 channel raw
+    const MAX_DIM = SCORE_CONFIG.analysisMaxDim;
 
 	const img = sharp(buffer, { failOn: "none" }).rotate(); // auto-orient
 	const meta = await img.metadata();
@@ -97,7 +112,7 @@ export async function computeBrightnessContrast(
  * - Lightweight: uses only `sharp`, no native OpenCV dependency.
  */
 export async function computeSharpness(buffer: Buffer): Promise<number> {
-	const MAX_DIM = 256;
+    const MAX_DIM = SCORE_CONFIG.analysisMaxDim;
 
 	const img = sharp(buffer, { failOn: "none" }).rotate(); // auto-orient
 	const meta = await img.metadata();
@@ -185,13 +200,13 @@ export async function computeFaceSignals(
 	}
 	const tensor = tfn.node.decodeImage(buffer, 3) as Tensor3D;
 	try {
-		const detections = await fa
-			.detectAllFaces(
-				tensor,
-				new fa.SsdMobilenetv1Options({ minConfidence: 0.3 }),
-			)
-			.withFaceLandmarks()
-			.withFaceExpressions();
+        const detections = await fa
+            .detectAllFaces(
+                tensor,
+                new fa.SsdMobilenetv1Options({ minConfidence: SCORE_CONFIG.faceMinConfidence }),
+            )
+            .withFaceLandmarks()
+            .withFaceExpressions();
 
 		if (!detections.length) {
 			return { facePresence: 0, eyesOpen: 0, smiling: 0 };

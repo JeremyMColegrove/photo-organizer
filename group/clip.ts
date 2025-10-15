@@ -12,23 +12,41 @@ import sharp from "sharp";
 import phash from "sharp-phash";
 import bar from "../bar";
 
-// Disable telemetry (optional)
-// env.allowRemoteModels = true;
-// env.useBrowserCache = false;
-
 // Singleton pipeline instance (auto-cached after first load)
 let imageEmbedder: ImageFeatureExtractionPipeline | null = null;
 let textEmbedder: ZeroShotImageClassificationPipeline | null = null;
+
+export type ClipConfig = {
+	embedderModel?: string;
+	classifierModel?: string;
+	resizeWidth?: number;
+	resizeHeight?: number;
+	jpegQuality?: number;
+	hypothesisTemplate?: string;
+};
+
+let CLIP_CONFIG: Required<ClipConfig> = {
+	embedderModel: "xenova/clip-vit-base-patch32",
+	classifierModel: "Xenova/siglip-large-patch16-384",
+	resizeWidth: 224,
+	resizeHeight: 224,
+	jpegQuality: 92,
+	hypothesisTemplate: "a photo of {}",
+};
+
+export function setClipConfig(cfg: ClipConfig) {
+	CLIP_CONFIG = { ...CLIP_CONFIG, ...cfg };
+}
 /**
  * Loads CLIP model (lazy)
  */
 async function loadModel() {
 	if (!imageEmbedder) {
-		imageEmbedder = await pipeline(
+		imageEmbedder = (await pipeline(
 			"image-feature-extraction",
-			"xenova/clip-vit-base-patch32",
+			CLIP_CONFIG.embedderModel,
 			{ dtype: "auto", device: "auto" },
-		);
+		)) as unknown as ImageFeatureExtractionPipeline;
 	}
 	return imageEmbedder;
 }
@@ -38,11 +56,11 @@ async function loadModel() {
  */
 async function loadClassifierModel() {
 	if (!textEmbedder) {
-		textEmbedder = await pipeline(
+		textEmbedder = (await pipeline(
 			"zero-shot-image-classification",
-			"Xenova/siglip-large-patch16-384",
+			CLIP_CONFIG.classifierModel,
 			{ dtype: "auto", device: "auto" },
-		);
+		)) as unknown as ZeroShotImageClassificationPipeline;
 	}
 	return textEmbedder;
 }
@@ -81,15 +99,15 @@ export async function getClassifierScore(
 		.toColorspace("srgb") // models are trained in sRGB
 		.removeAlpha() // or .flatten({ background: "#fff" }) if you want white bg
 		.resize({
-			width: 224,
-			height: 224,
+			width: CLIP_CONFIG.resizeWidth,
+			height: CLIP_CONFIG.resizeHeight,
 			fit: "cover",
 			position: "attention", // auto-crop toward salient region (or "entropy")
 			withoutEnlargement: true,
 			fastShrinkOnLoad: true,
 		})
 		.jpeg({
-			quality: 92, // keep artifacts low for embeddings
+			quality: CLIP_CONFIG.jpegQuality, // keep artifacts low for embeddings
 			mozjpeg: true, // better psychovisually
 			chromaSubsampling: "4:4:4", // preserve color detail (avoid 4:2:0 smearing)
 			trellisQuantisation: true,
@@ -101,7 +119,7 @@ export async function getClassifierScore(
 
 	const raw = await RawImage.fromBlob(new Blob([buffer]));
 	const result = await classifier(raw, keywords, {
-		hypothesis_template: "a photo of {}",
+		hypothesis_template: CLIP_CONFIG.hypothesisTemplate,
 	});
 	return result.flat().at(0) ?? null;
 	// return res.reduce((a, c) => (c.score > a.score ? c : a));

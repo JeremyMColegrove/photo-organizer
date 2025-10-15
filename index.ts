@@ -5,12 +5,12 @@ import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
 import { compressImagesInFolder } from "./compress/compress";
 import { groupPhotos } from "./group";
-import { buildPhotosFromFiles } from "./group/clip";
+import { buildPhotosFromFiles, setClipConfig } from "./group/clip";
 import { moveDups } from "./moves/move";
 import preGroupPhotos from "./pregroup/pregroup";
 import { tagAndRenameFiles } from "./rename/rename";
 import { reviewAllGroupsBun } from "./review/review";
-import { scoreImages } from "./score/score";
+import { scoreImages, setScoreConfig } from "./score/score";
 
 const MODELS_DIR = path.resolve("models");
 
@@ -62,6 +62,59 @@ async function main() {
 			describe:
 				"Skips using facial recognition to determine best photo. This bypasses some libraries which can be problematic during installation.",
 		})
+		// Pregroup options
+		.option("pregroup-threshold", {
+			type: "number",
+			default: 0.0001,
+			describe: "Threshold (0..1) for pregroup keyword match",
+		})
+		// Grouping options
+		.option("group-seconds-separated", {
+			type: "number",
+			default: 5,
+			describe: "Max seconds apart to consider same group",
+		})
+		.option("group-phash", {
+			type: "number",
+			default: 0.8,
+			describe: "pHash similarity threshold (0..1)",
+		})
+		.option("group-cosine-threshold", {
+			type: "number",
+			default: 0.8,
+			describe: "Cosine similarity threshold (0..1)",
+		})
+		.option("group-cosine-max-minutes", {
+			type: "number",
+			default: 60 * 12,
+			describe: "Max minutes apart for cosine similarity link",
+		})
+		// CLIP/classifier options
+		.option("clip-embedder-model", {
+			type: "string",
+			default: "xenova/clip-vit-base-patch32",
+			describe: "HF model id for image feature extraction",
+		})
+		.option("clip-classifier-model", {
+			type: "string",
+			default: "Xenova/siglip-large-patch16-384",
+			describe: "HF model id for zero-shot image classification",
+		})
+		.option("clip-resize", {
+			type: "number",
+			default: 224,
+			describe: "Resize square dimension for classifier input",
+		})
+		.option("clip-quality", {
+			type: "number",
+			default: 92,
+			describe: "JPEG quality for classifier input",
+		})
+		.option("clip-hypothesis", {
+			type: "string",
+			default: "a photo of {}",
+			describe: "Zero-shot hypothesis template",
+		})
 		.option("rename-model", {
 			type: "string",
 			default: "llava:7b",
@@ -81,6 +134,54 @@ async function main() {
 			type: "number",
 			describe: "Limit number of images to rename",
 		})
+		.option("rename-concurrency", {
+			type: "number",
+			default: 1,
+			describe: "How many images to caption in parallel",
+		})
+		.option("rename-preview-quality", {
+			type: "number",
+			default: 70,
+			describe: "JPEG quality for the preview sent to the model",
+		})
+		.option("rename-preview-size", {
+			type: "number",
+			default: 672,
+			describe: "Square size for preview sent to the model",
+		})
+		// Compression options
+		.option("compress-max-kb", {
+			type: "number",
+			default: 500,
+			describe: "Only compress images larger than this size (KB)",
+		})
+		.option("compress-quality", {
+			type: "number",
+			default: 80,
+			describe: "JPEG quality for compressed output",
+		})
+		.option("compress-max-dimension", {
+			type: "number",
+			default: 4000,
+			describe: "Max width/height for resized images during compression",
+		})
+		// Scoring options
+		.option("score-max-dim", {
+			type: "number",
+			default: 256,
+			describe: "Max dimension for brightness/contrast/sharpness analysis",
+		})
+		.option("score-face-min-confidence", {
+			type: "number",
+			default: 0.3,
+			describe: "Min confidence for face detection (0..1)",
+		})
+		.option("score-weight-brightness", { type: "number", default: 0.05 })
+		.option("score-weight-contrast", { type: "number", default: 0.1 })
+		.option("score-weight-sharpness", { type: "number", default: 0.1 })
+		.option("score-weight-face", { type: "number", default: 0.15 })
+		.option("score-weight-eyes", { type: "number", default: 0.15 })
+		.option("score-weight-smile", { type: "number", default: 0.45 })
 		.strict()
 		.help()
 		.parseAsync();
@@ -111,6 +212,29 @@ async function main() {
 	});
 	const filesAbs = filesRel.map((f) => path.join(folder, f));
 
+	// Configure CLIP/classifier and scoring based on CLI
+	setClipConfig({
+		embedderModel: String(argv["clip-embedder-model"]),
+		classifierModel: String(argv["clip-classifier-model"]),
+		resizeWidth: Number(argv["clip-resize"]) || 224,
+		resizeHeight: Number(argv["clip-resize"]) || 224,
+		jpegQuality: Number(argv["clip-quality"]) || 92,
+		hypothesisTemplate: String(argv["clip-hypothesis"]) || "a photo of {}",
+	});
+
+	setScoreConfig({
+		analysisMaxDim: Number(argv["score-max-dim"]) || 256,
+		faceMinConfidence: Number(argv["score-face-min-confidence"]) || 0.3,
+		weights: {
+			brightness: Number(argv["score-weight-brightness"]) || 0.05,
+			contrast: Number(argv["score-weight-contrast"]) || 0.1,
+			sharpness: Number(argv["score-weight-sharpness"]) || 0.1,
+			facePresence: Number(argv["score-weight-face"]) || 0.15,
+			eyesOpen: Number(argv["score-weight-eyes"]) || 0.15,
+			smiling: Number(argv["score-weight-smile"]) || 0.45,
+		},
+	});
+
 	let groups: Awaited<ReturnType<typeof groupPhotos>> | undefined;
 	let scored: Awaited<ReturnType<typeof scoreImages>> | undefined;
 	const chosen: Awaited<ReturnType<typeof scoreImages>> = [];
@@ -119,7 +243,7 @@ async function main() {
 		const clipped = await buildPhotosFromFiles(filesAbs);
 
 		const pregroup = await preGroupPhotos(clipped, keywords, {
-			threshold: 0.0001,
+			threshold: Number(argv["pregroup-threshold"]) || 0.0001,
 		});
 
 		saveLog(pregroup, "pregroup.json");
@@ -128,10 +252,11 @@ async function main() {
 		const clippedRemaining = clipped.filter((v) => !matched.has(v.path));
 
 		groups = await groupPhotos(clippedRemaining, {
-			secondsSeparated: 5,
-			phash: 0.8,
-			cosineSimilarityThreshold: 0.8,
-			cosineMaxMinutes: 60 * 12,
+			secondsSeparated: Number(argv["group-seconds-separated"]) || 5,
+			phash: Number(argv["group-phash"]) || 0.8,
+			cosineSimilarityThreshold:
+				Number(argv["group-cosine-threshold"]) || 0.8,
+			cosineMaxMinutes: Number(argv["group-cosine-max-minutes"]) || 60 * 12,
 		});
 		// combine pregroup and groups
 		pregroup.filter((x) => x.length > 0).flat().length > 0 &&
@@ -188,7 +313,9 @@ async function main() {
 				typeof argv["rename-limit"] === "number"
 					? Number(argv["rename-limit"])
 					: undefined,
-			concurrency: 1,
+			concurrency: Number(argv["rename-concurrency"]) || 1,
+			previewQuality: Number(argv["rename-preview-quality"]) || 70,
+			previewSize: Number(argv["rename-preview-size"]) || 672,
 		});
 	} else {
 		console.log("⚠️ Skipping: rename");
@@ -196,7 +323,10 @@ async function main() {
 
 	// 5) Compress images
 	if (shouldRun("compress")) {
-		await compressImagesInFolder(folder, 500);
+		await compressImagesInFolder(folder, Number(argv["compress-max-kb"]) || 500, {
+			quality: Number(argv["compress-quality"]) || 80,
+			resizeMaxDimension: Number(argv["compress-max-dimension"]) || 4000,
+		});
 	} else {
 		console.log("⚠️ Skipping: compress");
 	}
