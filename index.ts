@@ -130,11 +130,6 @@ async function main() {
 			type: "number",
 			describe: "Limit number of images to rename",
 		})
-		.option("rename-concurrency", {
-			type: "number",
-			default: 1,
-			describe: "How many images to caption in parallel",
-		})
 		.option("rename-preview-quality", {
 			type: "number",
 			default: 70,
@@ -297,7 +292,6 @@ async function main() {
 				typeof argv["rename-limit"] === "number"
 					? Number(argv["rename-limit"])
 					: undefined,
-			concurrency: Number(argv["rename-concurrency"]) || 1,
 			previewQuality: Number(argv["rename-preview-quality"]) || 70,
 			previewSize: Number(argv["rename-preview-size"]) || 672,
 		});

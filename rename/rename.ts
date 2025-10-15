@@ -8,15 +8,14 @@ import bar from "../bar";
 // TaggerOptions is now globally defined in global.d.ts
 
 const DEFAULTS: Required<Omit<TaggerOptions, "limit">> = {
-    model: "llava:7b",
-    delayMs: 0,
-    tagsInName: 5,
-    prefix: "",
-    suffix: "",
-    separator: "-",
-    concurrency: 3,
-    previewQuality: 70,
-    previewSize: 672,
+	model: "llava:7b",
+	delayMs: 0,
+	tagsInName: 5,
+	prefix: "",
+	suffix: "",
+	separator: "-",
+	previewQuality: 70,
+	previewSize: 672,
 };
 
 /**
@@ -41,17 +40,17 @@ export async function tagAndRenameFiles(
 		const abs = path.resolve(String(f));
 		const rel = path.basename(abs);
 		try {
-            const buffer = await sharp(abs)
-                .jpeg({
-                    quality: o.previewQuality,
-                })
-                .resize({
-                    width: o.previewSize,
-                    height: o.previewSize,
-                    fit: "cover",
-                    withoutEnlargement: true,
-                })
-                .toBuffer();
+			const buffer = await sharp(abs)
+				.jpeg({
+					quality: o.previewQuality,
+				})
+				.resize({
+					width: o.previewSize,
+					height: o.previewSize,
+					fit: "cover",
+					withoutEnlargement: true,
+				})
+				.toBuffer();
 
 			const tags = await generateTagsFromBuffer(buffer, o);
 
@@ -110,22 +109,6 @@ async function generateTagsFromBuffer(
 		.split(" ")
 		.filter((x) => !forbidden.includes(x));
 	return nouns;
-	// const out = await pline(new Blob([buffer]));
-	// console.log(out);
-	// const res = out[0];
-
-	// const word =
-	// 	(Array.isArray(res) ? res.at(0)?.generated_text : res?.generated_text) ??
-	// 	"";
-
-	// const doc = nlp(word);
-	// const nouns = doc
-	// 	.match("#Noun")
-	// 	.text()
-	// 	.split(" ")
-	// 	.filter((x) => !forbidden.includes(x));
-	// console.log(nouns);
-	// return nouns;
 }
 
 const forbidden = ["man", "woman", "person", "group", "people", "picture"];
