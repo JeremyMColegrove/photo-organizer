@@ -96,7 +96,7 @@ export async function getClassifierScore(
 	// use sharp to convert to better format (jpg)
 	const buffer = await sharp(imagePath)
 		.rotate() // honor EXIF orientation
-		.toColorspace("srgb") // models are trained in sRGB
+		.toColourspace("srgb") // models are trained in sRGB
 		.removeAlpha() // or .flatten({ background: "#fff" }) if you want white bg
 		.resize({
 			width: CLIP_CONFIG.resizeWidth,

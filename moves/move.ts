@@ -18,7 +18,7 @@ export async function moveDups(
 	const total = groups.reduce((a, c) => a + c.length, 0);
 	const b = bar.start(0, total, {
 		task: "Moving duplicates",
-		detail: "Staring...",
+		detail: "Starting...",
 	});
 	for (const group of groups) {
 		for (const img of group) {

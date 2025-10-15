@@ -1,4 +1,3 @@
-import fg from "fast-glob";
 import fs from "node:fs";
 import path from "node:path";
 import { hideBin } from "yargs/helpers";
@@ -11,16 +10,13 @@ import preGroupPhotos from "./pregroup/pregroup";
 import { tagAndRenameFiles } from "./rename/rename";
 import { reviewAllGroupsBun } from "./review/review";
 import { scoreImages, setScoreConfig } from "./score/score";
+import { getFilesInFolder } from "./utils";
 
 const MODELS_DIR = path.resolve("models");
 
 // Step type now provided globally via global.d.ts
 
 const DEFAULT_EXTS = ["jpg", "jpeg", "png", "webp", "heic", "avif", "heif"];
-
-function buildGlobPattern(exts: string[]): string {
-	return `*.{${exts.join(",")}}`;
-}
 
 function saveLog(json: unknown, name: string) {
 	fs.writeFileSync(name, JSON.stringify(json));
@@ -201,16 +197,7 @@ async function main() {
 	);
 
 	const shouldRun = (s: Step) => !skipSet.has(s);
-	// Glob once and pass files to steps
-	const pattern = buildGlobPattern(exts);
-	const filesRel = await fg([pattern], {
-		cwd: folder,
-		onlyFiles: true,
-		unique: true,
-		dot: false,
-		caseSensitiveMatch: false,
-	});
-	const filesAbs = filesRel.map((f) => path.join(folder, f));
+	// Glob once and pass files to steps;
 
 	// Configure CLIP/classifier and scoring based on CLI
 	setClipConfig({
@@ -237,10 +224,11 @@ async function main() {
 
 	let groups: Awaited<ReturnType<typeof groupPhotos>> | undefined;
 	let scored: Awaited<ReturnType<typeof scoreImages>> | undefined;
-	const chosen: Awaited<ReturnType<typeof scoreImages>> = [];
+
 	// 1) Group similar photos
 	if (shouldRun("group")) {
-		const clipped = await buildPhotosFromFiles(filesAbs);
+		const files = await getFilesInFolder(folder, exts);
+		const clipped = await buildPhotosFromFiles(files);
 
 		const pregroup = await preGroupPhotos(clipped, keywords, {
 			threshold: Number(argv["pregroup-threshold"]) || 0.0001,
@@ -254,8 +242,7 @@ async function main() {
 		groups = await groupPhotos(clippedRemaining, {
 			secondsSeparated: Number(argv["group-seconds-separated"]) || 5,
 			phash: Number(argv["group-phash"]) || 0.8,
-			cosineSimilarityThreshold:
-				Number(argv["group-cosine-threshold"]) || 0.8,
+			cosineSimilarityThreshold: Number(argv["group-cosine-threshold"]) || 0.8,
 			cosineMaxMinutes: Number(argv["group-cosine-max-minutes"]) || 60 * 12,
 		});
 		// combine pregroup and groups
@@ -279,7 +266,7 @@ async function main() {
 				});
 			});
 		}
-		saveLog(chosen, "groups.scored.json");
+		saveLog(scored, "groups.scored.json");
 	} else {
 		console.log("⚠️ Skipping: group");
 	}
@@ -299,13 +286,10 @@ async function main() {
 
 	// 4) Tag and rename images in place using provided file list
 	if (shouldRun("rename")) {
-		const keptFiles: string[] = chosen
-			.flat()
-			.filter((e) => e.keep)
-			.map((e) => e.path);
-		const listForRename = keptFiles.length > 0 ? keptFiles : filesAbs;
+		// Re-glob files so rename can run standalone
+		const files = await getFilesInFolder(folder, exts);
 
-		await tagAndRenameFiles(listForRename, {
+		await tagAndRenameFiles(files, {
 			delayMs: Number(argv["rename-delay"]) || 0,
 			model: String(argv["rename-model"]) || "llava:7b",
 			tagsInName: Number(argv["rename-tags"]) || 5,
@@ -323,10 +307,15 @@ async function main() {
 
 	// 5) Compress images
 	if (shouldRun("compress")) {
-		await compressImagesInFolder(folder, Number(argv["compress-max-kb"]) || 500, {
-			quality: Number(argv["compress-quality"]) || 80,
-			resizeMaxDimension: Number(argv["compress-max-dimension"]) || 4000,
-		});
+		const files = await getFilesInFolder(folder, exts);
+		await compressImagesInFolder(
+			files,
+			Number(argv["compress-max-kb"]) || 500,
+			{
+				quality: Number(argv["compress-quality"]) || 80,
+				resizeMaxDimension: Number(argv["compress-max-dimension"]) || 4000,
+			},
+		);
 	} else {
 		console.log("⚠️ Skipping: compress");
 	}
